@@ -61,6 +61,7 @@ class GfxHelper:
         plt.axis(bbox)
         buf = BytesIO()
         plt.savefig(buf, format="png", dpi=100)
+        plt.close()
         buf.seek(0)
         # Now the graph itself is drawn, and we can start drawing over it with Pillow. We load the original buffer, save
         # to another buffer from Pillow, and close the original. Then return the other one to caller.
@@ -214,6 +215,7 @@ class GfxHelper:
             draw.polygon(arrow_end_coords, outline=color, fill=color)
         buf = BytesIO()
         image.save(buf, format="png")
+        image.close()
         buf.seek(0)
 
         return buf
