@@ -187,7 +187,8 @@ class GfxHelper:
             else:
                 continue
             if origin_node not in coords or destination_node not in coords:
-                logger.warning('While drawing map, node %d is not in the dictionary "coords"' % node_id)
+                logger.warning('While drawing map, origin (%d) and/or destination (%d) node is not in the dictionary '
+                               '"coords"' % (origin_node, destination_node))
                 continue
             origin = coords[origin_node]
             destination = coords[destination_node]
