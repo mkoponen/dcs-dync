@@ -1,0 +1,8 @@
+json-rpc
+werkzeug
+euclid3
+networkx
+numpy
+matplotlib
+wxPython
+pillow
