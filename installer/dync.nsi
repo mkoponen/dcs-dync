@@ -62,6 +62,14 @@ Section "Install Server"
   
   ; The .bat that updates MissionScripting is not in the Python folder, so copy it specifically to root.
   File "..\bin\update-missionscripting.bat"
+
+  CreateDirectory "$InstDir\DCS World Files"
+
+  File "/oname=DCS World Files\DynC.lua" "..\lua\DynC.lua"
+  File "/oname=DCS World Files\dync_httpfix.lua" "..\lua\dync_httpfix.lua"
+  File "/oname=DCS World Files\dync_urlfix.lua" "..\lua\dync_urlfix.lua"
+  File "/oname=DCS World Files\DynCMissionInclude.lua" "..\lua\DynCMissionInclude.lua"
+  File "/oname=DCS World Files\mist_4_3_74.lua" "..\lua\mist_4_3_74.lua"
   
   ; Write the installation path into the registry
   WriteRegStr HKLM SOFTWARE\DCS-DynC "Install_Dir" "$INSTDIR"
