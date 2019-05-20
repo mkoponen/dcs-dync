@@ -751,12 +751,17 @@ class Campaign:
         else:
             aa_unit_id_counter = 1
 
+        if "allowed_aa_units" in serializable_dict and serializable_dict["allowed_aa_units"] is not None:
+            allowed_aa_units = serializable_dict["allowed_aa_units"]
+        else:
+            allowed_aa_units = None
+
         return Campaign(stage=stage, game_map=new_map, destroyed_unit_names_and_groups=destroyed_unit_names_and_groups,
                         resources_generic=resources_generic, unit_movement_decisions=unit_movement_decisions,
-                        aa_unit_id_counter=aa_unit_id_counter)
+                        aa_unit_id_counter=aa_unit_id_counter, allowed_aa_units=allowed_aa_units)
 
     def __init__(self, game_map, stage=0, destroyed_unit_names_and_groups=None, resources_generic=None,
-                 unit_movement_decisions=None, aa_unit_id_counter=1):
+                 unit_movement_decisions=None, aa_unit_id_counter=1, allowed_aa_units=None):
         if destroyed_unit_names_and_groups is None:
             destroyed_unit_names_and_groups = {}
         if unit_movement_decisions is None:
@@ -765,7 +770,10 @@ class Campaign:
         self.map = game_map
         self.destroyed_unit_names_and_groups = destroyed_unit_names_and_groups
         self.max_infantry_in_node = 4
-        self.allowed_aa_units = {"red": [], "blue": []}
+        if allowed_aa_units is None:
+            self.allowed_aa_units = {"red": [], "blue": []}
+        else:
+            self.allowed_aa_units = allowed_aa_units
         self.aa_unit_id_counter = aa_unit_id_counter
         if resources_generic is not None:
             self.resources_generic = resources_generic
@@ -902,4 +910,4 @@ class Campaign:
         return {"stage": self.stage, "map": serializable_map,
                 "destroyed_unit_names_and_groups": self.destroyed_unit_names_and_groups,
                 "resources_generic": self.resources_generic, "unit_movement_decisions": self.unit_movement_decisions,
-                "aa_unit_id_counter": self.aa_unit_id_counter}
+                "aa_unit_id_counter": self.aa_unit_id_counter, "allowed_aa_units": self.allowed_aa_units}

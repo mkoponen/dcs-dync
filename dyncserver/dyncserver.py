@@ -7,12 +7,14 @@ from os.path import expanduser
 from threading import Thread
 from configparser import ConfigParser
 from pathlib import Path
+import socket
 
 from ai import *
 from classes import *
 from gui import *
 from graphics import GfxHelper
 from windowloghandler import WindowLogHandler
+from message_service_discord import MessageService
 
 server_obj = None
 
@@ -41,7 +43,10 @@ class DynCServer:
         'LOG_WINDOW_LEVEL = 3\n' \
         'LOG_CONSOLE_LEVEL = 2\n\n' \
         '# Uncomment below to use a particular log directory. Make sure you are permitted to write to it.\n' \
-        '# LOG_FILE = C:\\dync.log\n'
+        '# LOG_FILE = C:\\dync.log\n\n' \
+        '[comms]\n\n# Uncomment and replace with correct URL to have the server post to a Discord channel\n' \
+        '# URL = https://discordapp.com/api/webhooks/SOMETHING\n' \
+        'USER = DynC Server\n'
 
     def __init__(self, campaign_json, conf_file):
         self.logger = logging.getLogger('general')
@@ -58,6 +63,8 @@ class DynCServer:
         self.config = ConfigParser()
         self.server_thread = None
         self.window = None
+        self.messages_url = None
+        self.messages_user = None
 
         if os.path.isfile(self.conf_file) is False:
             with open(self.conf_file, 'w') as f:
@@ -100,6 +107,9 @@ class DynCServer:
             log_console_level = int(self.config.get("logging", "LOG_CONSOLE_LEVEL")) * 10
         else:
             log_console_level = 20
+        if self.config.has_option("comms", "URL") and self.config.has_option("comms", "USER"):
+            self.messages_url = self.config.get("comms", "URL")
+            self.messages_user = self.config.get("comms", "USER")
 
         self.log_file_handler.setLevel(log_file_level)
         self.log_file_handler.setFormatter(self.log_file_formatter)
@@ -244,14 +254,17 @@ class DynCServer:
             if victory_red is True and victory_blue is True:
                 self.logger.info("Draw: Both sides enter the other's base")
                 self.delete_campaign()
+                self.post_message_if_necessary("Draw: Both sides enter the other\'s base")
                 return '{"code": "0", "event": "end", "result": "Draw: Both sides enter the other\'s base"}'
             elif victory_red is True:
                 self.logger.info("Red coalition won")
                 self.delete_campaign()
+                self.post_message_if_necessary("Red coalition won")
                 return '{"code": "0", "event": "end", "result": "Red coalition won"}'
             elif victory_blue is True:
                 self.logger.info("Blue coalition won")
                 self.delete_campaign()
+                self.post_message_if_necessary("Blue coalition won")
                 return '{"code": "0", "event": "end", "result": "Blue coalition won"}'
 
             self.campaign.stage += 1
@@ -263,6 +276,11 @@ class DynCServer:
         except Exception:
             self.logger.exception("Exception in missionend", exc_info=True)
             return '{"code": "1", "error": "Internal Server Error. See server logs for more information."}'
+
+    def post_message_if_necessary(self, message):
+        if self.messages_user is not None:
+            MessageService.hook_post_message(username=self.messages_user, url=self.messages_url,
+                                             message=message)
 
     def supportdestroyed(self, coalition):
         self.campaign.map.decrement_num_support_units(coalition)
@@ -702,6 +720,7 @@ class ServerThread(Thread):
 
     def run(self):
         run_simple('localhost', 44444, application)
+        run_simple(socket.gethostbyname(socket.gethostname()), 44445, application)
 
 
 def main():
@@ -733,6 +752,8 @@ def main():
     # of the software. In other words, as long as you only ever need the processing power of just one CPU core, use
     # threading.
     server_thread.start()
+
+    socket.gethostbyname(socket.gethostname())
 
     # Start the event loop.
     app.MainLoop()

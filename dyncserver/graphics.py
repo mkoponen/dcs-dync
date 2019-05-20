@@ -1,3 +1,4 @@
+import matplotlib
 import matplotlib.pyplot as plt
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
@@ -5,6 +6,7 @@ import networkx as nx
 import logging
 import math
 
+matplotlib.use('Agg')
 logger = logging.getLogger('general')
 
 

@@ -21,14 +21,14 @@ The server software for managing the dynamic campaigns will be installed. You wi
 !insertmacro MUI_LANGUAGE English
 
 
-VIProductVersion                 "0.1.0.0"
+VIProductVersion                 "0.1.1.0"
 VIAddVersionKey ProductName      "DCS DynC"
 VIAddVersionKey Comments         "Dynamic Campaign server for DCS World"
 VIAddVersionKey CompanyName      "Markku Koponen"
 VIAddVersionKey LegalCopyright   "Markku Koponen"
 VIAddVersionKey FileDescription  "Dynamic Campaign server for DCS World"
-VIAddVersionKey FileVersion      "0.1.0.0"
-VIAddVersionKey ProductVersion   "0.1.0.0"
+VIAddVersionKey FileVersion      "0.1.1.0"
+VIAddVersionKey ProductVersion   "0.1.1.0"
 VIAddVersionKey InternalName     "DCS-DynC"
 
 
@@ -70,6 +70,9 @@ Section "Install Server"
   File "/oname=DCS World Files\dync_urlfix.lua" "..\lua\dync_urlfix.lua"
   File "/oname=DCS World Files\DynCMissionInclude.lua" "..\lua\DynCMissionInclude.lua"
   File "/oname=DCS World Files\mist_4_3_74.lua" "..\lua\mist_4_3_74.lua"
+  
+  File "/oname=DCS World Files\beachparty-example1.miz" "..\bin\beachparty-example1.miz"
+  File "/oname=DCS World Files\mozdok-example1.miz" "..\bin\mozdok-example1.miz"
   
   ; Write the installation path into the registry
   WriteRegStr HKLM SOFTWARE\DCS-DynC "Install_Dir" "$INSTDIR"
