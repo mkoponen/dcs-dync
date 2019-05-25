@@ -23,10 +23,10 @@ somewhere in its group name. You create the network by creating a route for the 
 route represents one node of the network. If two waypoints are within 200 meters of each other, they get merged into a
 single node, and this is how what would otherwise be just a point-to-point line, becomes a graph. It is recommended to
 place the waypoints as close as you can on top of each other, since 200m may be a bit difficult to visually assess from
-the map. No unit with \_\_rom\_\_ (For "ROuteMarker")in its groupname will remain on the field when the mission starts.
+the map. No unit with \_\_rom\_\_ (For "ROuteMarker") in its groupname will remain on the field when the mission starts.
 As soon as the host player's* scripting engine is able to start, the routes are communicated to the server application
 which creates the graph, and then the units are deleted from the field. You can use as many units as you need. Merged
-waypoints can belong to the same unit, or different units. Only thing that matter is that you see two circles on top of
+waypoints can belong to the same unit, or different units. Only thing that matters is that you see two circles on top of
 each other.
 
 \* In this document, "host player" also refers to the only player if this is a single player match, unless multiplayer
@@ -57,7 +57,7 @@ other static object type for these markers, because some of them cannot be delet
 the current version of DCS World at the time of writing. For example smoke is not recognized as a proper static object
 for deletion, and would remain on the playing field.
 
-Any missions you might give to any other planes than those with \_\_ig\_\_ in their group name, are simply ignored. The
+Any orders you might give to any other planes than those with \_\_ig\_\_ in their group name, are simply ignored. The
 server will locate the group of tanks that it considers to be the greatest current threat to that side, and commands the
 plane to patrol in that area. Please note that the DCS World A.I. can make some undesirable decisions; for example
 placing a radio tower that belongs to the opposing side near the airfield would immediately draw the plane to that radio
