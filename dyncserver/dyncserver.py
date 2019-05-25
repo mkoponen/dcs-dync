@@ -20,6 +20,7 @@ server_obj = None
 
 
 class DynCServer:
+
     cfg_default_content = \
         '[campaign]\nMAX_INFANTRY = 4\n\n' \
         '# USA AA types: "Vulcan" "M1097 Avenger" "M48 Chaparral" "Hawk cwar" "Hawk ln" "Hawk pcp"\n' \
@@ -135,6 +136,11 @@ class DynCServer:
             item_clean = item.strip().replace('"', '')
             self.campaign.allowed_aa_units["blue"].append(item_clean)
 
+    def reset_campaign(self):
+        self.delete_campaign()
+        self.init_campaign()
+        self.read_config(self.conf_file)
+
     def get_graph_image(self):
         if self.campaign.map is None or self.campaign.map.graph is None:
             self.logger.warning("Cannot draw graph because some information is missing")
@@ -181,9 +187,24 @@ class DynCServer:
             movement_list.append({"origin_node": origin_node, "destination_node": destination_node, "name": key,
                                   "type": group.category, "coalition": group.coalition})
 
+        # There's a little hiccup here: DCS World coordinates have x in up-down and y in left-right. To get a graphichal
+        # representation of the coordinates, we have to switch them around.
+        graphical_coord_mapmarkers = []
+
+        for mapmarker in self.campaign.map.mapmarkers:
+            graphical_coord_mapmarkers.append({"name": mapmarker["name"],
+                                               "pos": (mapmarker["pos"][1], mapmarker["pos"][0])})
+
+        bullseyes = {"red": None, "blue": None}
+        if self.campaign.map.red_bullseye is not None:
+            bullseyes["red"] = (self.campaign.map.red_bullseye[1], self.campaign.map.red_bullseye[0])
+        if self.campaign.map.blue_bullseye is not None:
+            bullseyes["blue"] = (self.campaign.map.blue_bullseye[1], self.campaign.map.blue_bullseye[0])
+
         return GfxHelper.draw_map(graph=self.campaign.map.graph, coords=coords, bbox=bbox,
                                   red_goal=self.campaign.map.red_goal_node, blue_goal=self.campaign.map.blue_goal_node,
-                                  groups=passed_groups_dict, movement_decisions=movement_list)
+                                  groups=passed_groups_dict, movement_decisions=movement_list,
+                                  mapmarkers=graphical_coord_mapmarkers, bullseyes=bullseyes)
 
     def get_aa_unit_type(self, coalition):
         if coalition != "red" and coalition != "blue":
@@ -218,7 +239,7 @@ class DynCServer:
                 group = groups[group_name]
 
                 if group.category == "vehicle" and (group.coalition == "red" or group.coalition == "blue") and \
-                        group_name.startswith("staticgroup") is False:
+                        "__sg__" not in group_name:
 
                     node_id = int(self.campaign.map.find_group_node(group))
 
@@ -329,6 +350,17 @@ class DynCServer:
             routes = obj["routes"]
             units = obj["units"]
             goals = obj["goals"]
+            bullseyes = obj["bullseye"]
+
+            mapmarkers = []
+            if "mapmarkers" in obj:
+                for mapmarker in obj["mapmarkers"]:
+                    real_name = mapmarker["name"].replace("__mm__", "")
+                    # If removing __mm__ left two consecutive spaces because it was somewhere in the middle, we combine
+                    real_name = real_name.replace("  ", " ")
+                    split_pos = mapmarker["pos"].split(",")
+                    point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
+                    mapmarkers.append({"name": real_name, "pos": (point.x, point.y)})
 
             if os.path.isfile(self.campaign_json) is True:
                 # Note: dynamically generated units are not included by default by units_match; DCS wouldn't know about
@@ -336,8 +368,7 @@ class DynCServer:
                 if self.campaign.units_match(units) is False:
                     self.logger.warning("Mismatch in units reported by DCS, and our existing campaign file. "
                                         "Resetting campaign.")
-                    self.delete_campaign()
-                    self.init_campaign()
+                    self.reset_campaign()
             must_update_distances = False
             # Merging the graph can be reasonably costly, so we do it only once
             if self.campaign.map.graph is None:
@@ -440,10 +471,38 @@ class DynCServer:
             if must_update_distances:
                 self.campaign.map.update_nodes_by_distance()
 
+            # If we have received any mapmarkers and they aren't in the map already, update the map. If the map already
+            # has any markers at all, don't change it.
+            if (self.campaign.map.mapmarkers is None or len(self.campaign.map.mapmarkers) == 0) and len(mapmarkers) > 0:
+                self.campaign.map.mapmarkers = mapmarkers
+
+            if self.campaign.map.red_bullseye is None:
+                split_pos = bullseyes["red"].split(",")
+                point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
+                self.campaign.map.red_bullseye = (point.x, point.y)
+            if self.campaign.map.blue_bullseye is None:
+                split_pos = bullseyes["blue"].split(",")
+                point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
+                self.campaign.map.blue_bullseye = (point.x, point.y)
+
             groups = self.campaign.map.groups()
             groups_pos = {}
             groups_dest = {}
             decisions = self.campaign.get_movement_decisions()
+
+            # This is a bit ugly. It looks like DCS scripting has some kind of a bug where a group ignores its route if
+            # it is given too early, or something else that teleporting the group appears to fix. Because the problem
+            # only manifested on the first stage, and the only difference is the lack of teleporting. In order to force
+            # all stages to behave the same, and thereby remove one variable in debugging this problem, we crudely make
+            # the first stage teleport too, to the units' original location.
+            if self.campaign.stage == 0:
+                for group_name in groups:
+                    group = groups[group_name]
+                    if group is None or group.category != "vehicle" or "__sg__" in group_name:
+                        continue
+                    node = self.campaign.map.find_group_node_by_group_name(group_name)
+                    coords = self.campaign.map.get_node_coords(node)
+                    groups_pos[group_name] = "%f,%f" % (coords[0], coords[1])
 
             # list of dicts of the format:
             # [{ node_id: group_name, node_id: group_name}, {node_id: group_name, node_id: group_name}, ...]
@@ -542,8 +601,8 @@ class DynCServer:
             for group_name in groups:
                 group = groups[group_name]
 
-                if group is None or group.category != "vehicle" or group_name.startswith("staticgroup") or \
-                        group_name.startswith("aagroup"):
+                # sg = staticgroup, aa = anti-aircraft
+                if group is None or group.category != "vehicle" or "__sg__" in group_name or "__aa__" in group_name:
                     continue
 
                 if group.coalition == "red":
@@ -610,9 +669,11 @@ class DynCServer:
             for coalition in coalitions:
                 if self.campaign.get_resources_generic(coalition) >= 2:
                     self.logger.info("Coalition %s purchases new AA unit" % coalition)
-                    new_dynamic_group = Group(name="aagroup-%s-%d" % (coalition, self.campaign.aa_unit_id_counter),
+                    new_dynamic_group = Group(name="Anti-aircraft %s %d (dyn) __aa__" %
+                                                   (coalition, self.campaign.aa_unit_id_counter),
                                               group_category="vehicle", coalition=coalition, units=None, dynamic=True)
-                    new_dynamic_group.add_unit(Unit(name="aaunit-%s-%d" % (coalition, self.campaign.aa_unit_id_counter),
+                    new_dynamic_group.add_unit(Unit(name="Anti-aircraft unit %s %d (dyn)" %
+                                                         (coalition, self.campaign.aa_unit_id_counter),
                                                     unit_type=self.get_aa_unit_type(coalition), skill="Good"))
                     self.campaign.aa_unit_id_counter += 1
                     if coalition == "red":
@@ -630,7 +691,7 @@ class DynCServer:
             for group_name in groups:
                 group = groups[group_name]
 
-                if group is None or group.category != "vehicle" or group_name.startswith("aagroup") is False:
+                if group is None or group.category != "vehicle" or "__aa__" not in group_name:
                     continue
 
                 node_id = decide_aa_move(group, self.campaign.map)
@@ -698,6 +759,19 @@ class DynCServer:
         if self.campaign.map.graph is not None:
             buf = server_obj.get_graph_image()
             self.window.update_map(buf)
+
+    def save_image(self):
+
+        if self.window.old_image_buffer is not None:
+            self.window.old_image_buffer.seek(0)
+            img = self.window.old_image_buffer.read()
+            # Just to be sure, return file pointer to beginning in case some other code forgets to do it first.
+            self.window.old_image_buffer.seek(0)
+            path = os.path.join(Path(expanduser('~/DCS-DynC/')), "map.png")
+            with open(path, 'wb') as file:
+                file.write(img)
+        else:
+            self.logger.warning("No map has been received yet")
 
 
 @Request.application

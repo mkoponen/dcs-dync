@@ -1,9 +1,6 @@
 do
-	env.info("DynC.lua has been loaded", true)
 	-- Default value for socket. You may want to change this line if something in your computer already uses this socket.
 	dync.socket = "http://127.0.0.1:44444"
-	
-	
 	
 	---------------------------------------------------------------------------------------
 	-- Below here, you probably don't want to change anything unless you know the code well
@@ -519,6 +516,7 @@ do
 
 	local live_units = {}
 	local fly_commands = {}
+	local delayed_routes = {}
 	server = json.rpc.proxy(dync_socket)
 
 
@@ -540,7 +538,7 @@ do
 
 			for k,v in pairs(live_units) do
 
-				if string.starts(v["unitname"], "immortal") then
+				if string.find(v["unitname"], "__im__") or string.find(v["groupname"], "__im__") then
 					-- Ignore
 				else
 					local unit = Unit.getByName(v["unitname"])
@@ -571,28 +569,40 @@ do
 				event.id == world.event.S_EVENT_CRASH or event.id == world.event.S_EVENT_EJECTION then
 
 			local name = event.initiator:getName()
+			-- Somewhat crudely handle object types that don't have groups. Make the apparent group name the unit name.
+			local groupname = name
+			if Object.getCategory(event.initiator) == 1 then
+				groupname = Unit.getGroup(event.initiator):getName()
+			end
 
-			if string.starts(name, "ignoreunit") then
+			if string.find(name, "__ig__") or string.find(groupname, "__ig__") then
+				-- ig: ignore
 				return
 			end
 
-			if string.starts(name, "immortal") then
+			if string.find(name, "__im__") or string.find(groupname, "__im__") then
+				-- im: immortal
+				return
+			end
+			
+			if string.find(name, "__mm__") or string.find(groupname, "__mm__") then
+				-- mm: mapmarker
 				return
 			end
 
-			if string.starts(name, "support-") then
-				local spl = string.split(name, "-")
+			if string.find(name, "__su__") then
+				-- su: support unit
+				local coalition = event.initiator:getCoalition()
 
-				if spl[1] == "red" then
+				if coalition == coalition.side.RED then
 					local result, error = server.supportdestroyed({"red",})
 					env.info("Reported red coalition support unit destroyed", false)
-				elseif spl[1] == "blue" then
+				elseif coalition == coalition.side.BLUE then
 					local result, error = server.supportdestroyed({"blue",})
-					env.info("Reported blue coalition support unit destroyed", false)
-				else
-					env.info("Found a unit that starts with 'support-' but the next piece of the name is neither 'blue' nor 'red'. Name is: "..name, false)
+					env.info("Reported blue coalition support unit destroyed", false)				
 				end
-			elseif string.starts(name, "infantry-red-") or string.starts(name, "infantry-blue-") then
+			elseif string.find(name, "__in__") then
+				-- in: infantry
 
 				-- Weep for the tragedy. Do absolutely nothing at all.
 
@@ -601,7 +611,11 @@ do
 
 				for k,v in pairs(live_units) do
 					if name == v["unitname"] then
-						local groupname = event.initiator:getGroup():getName()
+						-- Somewhat crudely handle object types that don't have groups. Make the apparent group name the unit name.
+						local groupname = name
+						if Object.getCategory(event.initiator) == 1 then
+							groupname = Unit.getGroup(event.initiator):getName()
+						end
 						local result, error = server.unitdestroyed({name, groupname})
 						env.info("Reported destroyed unit: "..name..", group: "..groupname, false)
 						live_units[k] = nil
@@ -616,8 +630,14 @@ do
 		elseif event.id == world.event.S_EVENT_TAKEOFF then
 
 			local name = event.initiator:getName()
+			-- Somewhat crudely handle object types that don't have groups. Make the apparent group name the unit name.
+			local groupname = name
+			if Object.getCategory(event.initiator) == 1 then
+				groupname = Unit.getGroup(event.initiator):getName()
+			end
 
-			if string.starts(name, "ignoreunit") then
+			if string.find(name, "__ig__") or string.find(groupname, "__ig__") then
+				-- ig: ignore
 				return
 			end
 
@@ -638,7 +658,6 @@ do
 		jsonobj["units"] = {}
 
 		for k,v in pairs(mist.DBs.unitsByName) do
-
 			jsonobj["units"][k] = {}
 			jsonobj["units"][k]["category"] = v["category"]
 			jsonobj["units"][k]["type"] = v["type"]
@@ -650,10 +669,25 @@ do
 		units = jsonobj["units"]
 		jsonobj["routes"] = {}
 		jsonobj["goals"] = {}
+		jsonobj["mapmarkers"] = {}
+		jsonobj["bullseye"] = {}
+		
+		if mist.DBs.missionData.bullseye.red ~= nil then
+			jsonobj["bullseye"]["red"] = string.format("%f,%f", mist.DBs.missionData.bullseye.red.x, mist.DBs.missionData.bullseye.red.y)
+		end
+		
+		if mist.DBs.missionData.bullseye.blue ~= nil then
+			jsonobj["bullseye"]["blue"] = string.format("%f,%f", mist.DBs.missionData.bullseye.blue.x, mist.DBs.missionData.bullseye.blue.y)
+		end
+		
+		mist.DBs.missionData.bullseye.red.x = env.mission.coalition.red.bullseye.x --should it be point.x?
+			mist.DBs.missionData.bullseye.red.y = env.mission.coalition.red.bullseye.y
+			mist.DBs.missionData.bullseye.blue.x = env.mission.coalition.blue.bullseye.x
+			mist.DBs.missionData.bullseye.blue.y = env.mission.coalition.blue.bullseye.y
 
 		for k,v in pairs(units) do
 
-			if string.starts(k, "routemarker")  then
+			if string.starts(k, "routemarker") or string.find(k, "__rom__") or string.find(v["group"], "__rom__") then
 
 				local grp = Group.getByName(v["group"])
 				local points = mist.getGroupPoints(grp:getID())
@@ -676,12 +710,26 @@ do
 				Unit.getByName(k):destroy()
 				jsonobj["units"][k] = nil
 
-			elseif string.starts(k, "roadmarker") then
+			elseif string.starts(k, "roadmarker") or string.find(k, "__rdm__") or string.find(v["group"], "__rdm__") then
 
 				Unit.getByName(k):destroy()
 				jsonobj["units"][k] = nil
+			
+			elseif string.starts(k, "mapmarker") or string.find(k, "__mm__") or string.find(v["group"], "__mm__") then
+			
+				mapmarker = {}
+				mapmarker["name"] = v["group"]
+				mapmarker["pos"] = v["pos"]
+				table.insert(jsonobj["mapmarkers"], mapmarker)
+				
+				if Unit.getByName(k) then
+					Unit.getByName(k):destroy()
+				elseif StaticObject.getByName(k) then					
+					StaticObject.getByName(k):destroy()				
+				end
+				jsonobj["units"][k] = nil
 
-			elseif string.starts(k, "objective") then
+			elseif string.starts(k, "objective") or string.find(k, "__ob__") or string.find(v["group"], "__ob__") then
 
 				local coalition = v["coalition"]
 				local spl = string.split(v["pos"], ",")
@@ -697,7 +745,7 @@ do
 				Unit.getByName(k):destroy()
 				jsonobj["units"][k] = nil
 
-			elseif string.starts(k, "ignoreunit") then
+			elseif string.find(k, "__ig__") or string.find(v["group"], "__ig__") then
 
 				jsonobj["units"][k] = nil
 
@@ -775,8 +823,7 @@ do
 			local x = spl[0]
 			local y = spl[1]
 			local vec2 = {x = tonumber(spl[0]), y = tonumber(spl[1])}
-			groundvec3 = mist.utils.makeVec3GL (vec2)
-			env.info(string.format("Teleporting group: %s to point %f,%f", k, groundvec3.x, groundvec3.z), false)
+			groundvec3 = mist.utils.makeVec3GL (vec2)			
 			mist.teleportToPoint ({point=groundvec3, gpName=k, action="teleport", disperse="disp", maxDisp=dispersion,
 								   radius=center_randomness})
 		end
@@ -790,7 +837,7 @@ do
 		yblue = splblue[1]
 		vec2blue = {x = tonumber(splblue[0]), y = tonumber(splblue[1])}
 
-		local addedgroup = {country="USA", category="vehicle", groupName="support-blue"}
+		local addedgroup = {country="USA", category="vehicle", groupName="support-blue __su__"}
 		local addedunits = {}
 		vec2blue = mist.getRandPointInCircle(vec2blue, center_randomness)
 
@@ -801,7 +848,7 @@ do
 		end
 		addedgroup["units"] = addedunits
 		mist.dynAdd(addedgroup)
-		addedgroup = {country = "Russia", category = "vehicle", groupName = "support-red"}
+		addedgroup = {country = "Russia", category = "vehicle", groupName = "support-red __su__"}
 		addedunits = {}
 		vec2red = mist.getRandPointInCircle(vec2red, center_randomness)
 		for i = 1, supportnumred do
@@ -820,7 +867,7 @@ do
 			local x = spl[0]
 			local y = spl[1]
 			local vec2 = {x = tonumber(spl[0]), y = tonumber(spl[1])}
-			local name = string.format("infantry-red-%dX-#%d", num, infantryID)
+			local name = string.format("Infantry red %dX #%d (dyn) __in__", num, infantryID)
 
 			local addedgroup = {country="Russia", category="vehicle", groupName=name,
 								 units={{unitName=name, skill="Excellent", type="Infantry AK", x=vec2.x, y=vec2.y},}}
@@ -838,7 +885,7 @@ do
 			local x = spl[0]
 			local y = spl[1]
 			local vec2 = {x = tonumber(spl[0]), y = tonumber(spl[1])}
-			local name = string.format("infantry-blue-%dX-#%d", num, infantryID)
+			local name = string.format("Infantry blue %dX #%d (dyn) __in__", num, infantryID)
 
 			local addedgroup = {country="USA", category="vehicle", groupName=name,
 								 units={{unitName=name, skill="Excellent", type="Soldier M249", x=vec2.x, y=vec2.y},}}
@@ -905,7 +952,7 @@ do
 			local y = spl[1]
 			local destvec2 = {x = tonumber(spl[0]), y = tonumber(spl[1])}
 			groundvec3 = mist.utils.makeVec3GL (destvec2)
-			local gpData = Group.getByName(k)
+			local gpData = Group.getByName(k)			
 			mist.groupToRandomPoint({group = gpData, point = groundvec3, radius = center_randomness, disableRoads = disable_roads})
 		end
 

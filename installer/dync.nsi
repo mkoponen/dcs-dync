@@ -2,6 +2,7 @@
 !include "LogicLib.nsh"
 !include "include\GetFolderPath.nsh"
 !include "MUI2.nsh"
+!include "version.nsh"
 
 !define MUI_ICON "..\dyncserver\resources\dync.ico"
 !define MUI_WELCOMEPAGE_TEXT "Setup will guide you through the installation of DCS DynC.$\r$\n\
@@ -20,17 +21,15 @@ The server software for managing the dynamic campaigns will be installed. You wi
 
 !insertmacro MUI_LANGUAGE English
 
-
-VIProductVersion                 "0.1.1.0"
+VIProductVersion                 "${VERSION}"
 VIAddVersionKey ProductName      "DCS DynC"
 VIAddVersionKey Comments         "Dynamic Campaign server for DCS World"
 VIAddVersionKey CompanyName      "Markku Koponen"
 VIAddVersionKey LegalCopyright   "Markku Koponen"
 VIAddVersionKey FileDescription  "Dynamic Campaign server for DCS World"
-VIAddVersionKey FileVersion      "0.1.1.0"
-VIAddVersionKey ProductVersion   "0.1.1.0"
+VIAddVersionKey FileVersion      "${VERSION}"
+VIAddVersionKey ProductVersion   "${VERSION}"
 VIAddVersionKey InternalName     "DCS-DynC"
-
 
 Name "DCS DynC"
 OutFile "dync-installer.exe"
@@ -44,7 +43,7 @@ Function .onInit
   ${Else}
     MessageBox MB_OK "Only 64-bit Windows is supported. Installer will now abort. It is possible to make 32-bit work by using the Python source code directly."
     Abort
-  ${EndIf}	
+  ${EndIf}
  FunctionEnd
  
  InstallDir $INSTDIR
@@ -71,7 +70,7 @@ Section "Install Server"
   File "/oname=DCS World Files\DynCMissionInclude.lua" "..\lua\DynCMissionInclude.lua"
   File "/oname=DCS World Files\mist_4_3_74.lua" "..\lua\mist_4_3_74.lua"
   
-  File "/oname=DCS World Files\beachparty-example1.miz" "..\bin\beachparty-example1.miz"
+  ; File "/oname=DCS World Files\beachparty-example1.miz" "..\bin\beachparty-example1.miz"
   File "/oname=DCS World Files\mozdok-example1.miz" "..\bin\mozdok-example1.miz"
   
   ; Write the installation path into the registry

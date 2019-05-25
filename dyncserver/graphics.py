@@ -27,40 +27,55 @@ class GfxHelper:
         return x, y
 
     @staticmethod
-    def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions):
+    def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions, mapmarkers=None,
+                 bullseyes=None):
 
+        if mapmarkers is None:
+            mapmarkers = []
+        if bullseyes is None:
+            bullseyes = {"red": None, "blue": None}
+
+        if mapmarkers is None:
+            mapmarkers = []
         plt.figure(figsize=(GfxHelper.image_size/100.0, GfxHelper.image_size/100.0), dpi=100)
 
         # Bounding box numbers are listed in this order: min-x, max-x, min-y, max-y. NetworkX expects to get them in
         # this order in a list.
         width, height = bbox[1] - bbox[0], bbox[3] - bbox[2]
 
+        # If horizontal is larger, we pad the vertical to make a square, or vice versa. We also add the same amount of
+        # extra padding to the absolute bounding box, to fit a bit more text if necessary.
         if width <= height:
-            padding_total = height / 10
+            tmp_w = width
+            tmp_h = height
+            padding_total = tmp_h / 10
             print(repr(padding_total))
-            difference = height - width
+            difference = tmp_h - tmp_w
             bbox[1] += (difference / 2) + (padding_total / 2)
             bbox[0] -= (difference / 2) + (padding_total / 2)
             bbox[3] += padding_total / 2
             bbox[2] -= padding_total / 2
-            height += padding_total
-            square_side_len = height
+            tmp_h += padding_total
+            square_side_len = tmp_h
         else:
-            padding_total = width / 10
-            difference = width - height
+            tmp_w = width
+            tmp_h = height
+            padding_total = tmp_w / 10
+            difference = tmp_w - tmp_h
             bbox[3] += (difference / 2) + (padding_total / 2)
             bbox[2] -= (difference / 2) + (padding_total / 2)
             bbox[1] += padding_total / 2
             bbox[0] -= padding_total / 2
-            width += padding_total
-            square_side_len = width
+            tmp_w += padding_total
+            square_side_len = tmp_w
 
-        # Due to all the fiddling above, these don't contain valid values anymore. Use square_side_len.
-        # noinspection PyUnusedLocal
-        height, width = None, None
-
+        # This draws the node graph as nx supports drawing it. Then we will start drawing over that file.
         nx.drawing.nx_pylab.draw(graph, coords, node_size=6, node_color="#80e080", edge_color="#a0a0a0")
+
+        # Axes to bounding box
         plt.axis(bbox)
+
+        # Save the graph to this buffer
         buf = BytesIO()
         plt.savefig(buf, format="png", dpi=100)
         plt.close()
@@ -80,10 +95,41 @@ class GfxHelper:
         buf.close()
 
         # Ok, now we are through with the alpha channel unpleasantness, and can start drawing.
-
         draw = ImageDraw.Draw(image, mode="RGBA")
-        font = ImageFont.truetype('verdana.ttf', size=20)
+
+        GfxHelper.draw_legend(draw_surface=draw)
+
+        font = ImageFont.truetype('verdana.ttf', size=12)
+
+        for mapmarker in mapmarkers:
+            name = mapmarker["name"].replace("__mm__", "").replace("  ", " ")
+            x, y = GfxHelper.map_coords_to_image_coords(mapmarker["pos"], bbox, square_side_len)
+            size = draw.textsize(name, font=font)
+            x -= size[0] / 2
+            y -= (size[1] / 2) + 3
+            draw.text((x, y), name, fill="#000000ff", font=font, align="center")
+
+        font = ImageFont.truetype('verdana.ttf', size=26)
         line_spacing = 6
+
+        if bullseyes["red"] is not None:
+            x, y = GfxHelper.map_coords_to_image_coords(bullseyes["red"], bbox, square_side_len)
+            message = "◊"
+            color = '#ff0000'
+            size = draw.textsize(message, font=font, spacing=line_spacing)
+            x -= size[0] / 2
+            y -= (size[1] / 2) + 3
+            draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
+        if bullseyes["blue"] is not None:
+            x, y = GfxHelper.map_coords_to_image_coords(bullseyes["blue"], bbox, square_side_len)
+            message = "◊"
+            color = '#0000ff'
+            size = draw.textsize(message, font=font, spacing=line_spacing)
+            x -= size[0] / 2
+            y -= (size[1] / 2) + 3
+            draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
+
+        font = ImageFont.truetype('verdana.ttf', size=20)
 
         # red_goal and blue_goal contain node ID's. The dictionary coords maps these to graph node coordinates. They are
         # tuples of the form (x, y)
@@ -92,10 +138,6 @@ class GfxHelper:
 
         # Remember that in image coordinates, origin is at top left, but in graph coordinates the lowest number is found
         # at bottom left. This is why the y-coordinates are of the form "1.0 - (ratio in graph coordinates)"
-        # ratio_red_goal_x = (red_goal_coords[0] - bbox[0]) / square_side_len
-        # ratio_red_goal_y = 1.0 - ((red_goal_coords[1] - bbox[2]) / square_side_len)
-        # ratio_blue_goal_x = (blue_goal_coords[0] - bbox[0]) / square_side_len
-        # ratio_blue_goal_y = 1.0 - ((blue_goal_coords[1] - bbox[2]) / square_side_len)
 
         # We know our image is given number of  pixels, so we simply multiply it with the ratio and get the pixel
         # coordinates of the correct node in the image.
@@ -131,9 +173,8 @@ class GfxHelper:
 
         x -= size[0] / 2
         y -= (size[1] / 2) + 3
-        draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
 
-        # font = ImageFont.truetype('verdana.ttf', size=14)
+        draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
 
         for node_id in groups:
             group_node_list = groups[node_id]
@@ -159,11 +200,9 @@ class GfxHelper:
                 group_type = group_data["type"]
 
                 if group_type == "infantry":
-                    triangle_side_len = 12.0
-                    top = (x, y - (1.732 * triangle_side_len / 4))
-                    left = (x + (-1 * triangle_side_len / 2), y - (-1.732 * triangle_side_len / 4))
-                    right = (x + (triangle_side_len / 2), y - (-1.732 * triangle_side_len / 4))
-                    draw.polygon([top, right, left], outline=solid_color, fill=symbol_color)
+
+                    GfxHelper.draw_triangle(draw_surface=draw, x=x, y=y, triangle_side_len=12.0,
+                                            outline_color=solid_color, fill_color=symbol_color)
                 elif group_type == "support":
                     draw.rectangle([x - 6, y - 6, x + 6, y + 6], outline=solid_color, fill=symbol_color)
                 elif group_type == "vehicle":
@@ -222,6 +261,34 @@ class GfxHelper:
         buf.seek(0)
 
         return buf
+
+    @staticmethod
+    def draw_triangle(draw_surface, x, y, triangle_side_len, outline_color, fill_color):
+        top = (x, y - (1.732 * triangle_side_len / 4))
+        left = (x + (-1 * triangle_side_len / 2), y - (-1.732 * triangle_side_len / 4))
+        right = (x + (triangle_side_len / 2), y - (-1.732 * triangle_side_len / 4))
+        draw_surface.polygon([top, right, left], outline=outline_color, fill=fill_color)
+        return
+
+    @staticmethod
+    def draw_legend(draw_surface):
+        font = ImageFont.truetype('verdana.ttf', size=12)
+        neutral_solid_color = "#505050ff"
+        neutral_symbol_color = "#50505090"
+        neutral_unimportant_symbol_color = "#50505050"
+
+        GfxHelper.draw_triangle(draw_surface=draw_surface, x=5, y=7, triangle_side_len=12.0,
+                                outline_color=neutral_solid_color, fill_color=neutral_symbol_color)
+
+        draw_surface.text((17, 0), "=infantry", fill="#000000ff", font=font, align="left")
+        draw_surface.rectangle([100, 1, 100 + 12, 1 + 12], outline=neutral_solid_color, fill=neutral_symbol_color)
+        draw_surface.text((117, 0), "=support", fill="#000000ff", font=font, align="left")
+        draw_surface.ellipse([200, 2, 200 + 10, 2 + 10], outline=neutral_solid_color, fill=neutral_unimportant_symbol_color)
+        draw_surface.text((217, 0), "=vehicle", fill="#000000ff", font=font, align="left")
+        draw_surface.text((317, 0), "=bullseye", fill="#000000ff", font=font, align="left")
+        font = ImageFont.truetype('verdana.ttf', size=26)
+        draw_surface.text((300-6, -11), "◊", fill=neutral_solid_color, font=font, align="left")
+        return
 
     @staticmethod
     def rotate_point_around_origin_clockwise(point, radians):

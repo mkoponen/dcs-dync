@@ -173,6 +173,16 @@ class Map:
         else:
             new_map.blue_goal_node = None
 
+        if "red_bullseye" in serializable_dict:
+            new_map.red_bullseye = serializable_dict["red_bullseye"]
+        else:
+            new_map.red_bullseye = None
+
+        if "blue_bullseye" in serializable_dict:
+            new_map.blue_bullseye = serializable_dict["blue_bullseye"]
+        else:
+            new_map.blue_bullseye = None
+
         # This is a reasonably lightweight operation. We can do it every time we read the JSON, instead of bloating the
         # campaign file by including a serialized form of it.
 
@@ -188,6 +198,12 @@ class Map:
             new_map.support_unit_nodes = serializable_dict["support_unit_nodes"]
         else:
             new_map.support_unit_nodes = {"red": new_map.blue_goal_node, "blue": new_map.red_goal_node}
+
+        if "mapmarkers" in serializable_dict:
+            new_map.mapmarkers = serializable_dict["mapmarkers"]
+        else:
+            new_map.mapmarkers = []
+
         return new_map
 
     @staticmethod
@@ -261,6 +277,9 @@ class Map:
         self.support_unit_nodes = None
         self.max_support_units_in_group = 7
         self.num_support_units = {"red": self.max_support_units_in_group, "blue": self.max_support_units_in_group}
+        self.mapmarkers = []
+        self.red_bullseye = None
+        self.blue_bullseye = None
 
     def get_num_units_in_node(self, coalition, node_id):
         if coalition != "red" and coalition != "blue":
@@ -340,6 +359,17 @@ class Map:
                 max_x = value[1]
             if min_x is None or min_x > value[1]:
                 min_x = value[1]
+
+        for mapmarker in self.mapmarkers:
+            pos = mapmarker["pos"]
+            if max_y is None or max_y < pos[0]:
+                max_y = pos[0]
+            if min_y is None or min_y > pos[0]:
+                min_y = pos[0]
+            if max_x is None or max_x < pos[1]:
+                max_x = pos[1]
+            if min_x is None or min_x > pos[1]:
+                min_x = pos[1]
         return positions, [min_x, max_x, min_y, max_y]
 
     def to_serializable(self):
@@ -362,7 +392,8 @@ class Map:
 
         return {"groups_in_nodes": serialized_groups_in_nodes, "infantry_in_nodes": serialized_infantry_in_nodes,
                 "red_goal_node": self.red_goal_node, "blue_goal_node": self.blue_goal_node, "graph": serializable_graph,
-                "support_unit_nodes": self.support_unit_nodes, "num_support_units": self.num_support_units}
+                "support_unit_nodes": self.support_unit_nodes, "num_support_units": self.num_support_units,
+                "mapmarkers": self.mapmarkers, "red_bullseye": self.red_bullseye, "blue_bullseye": self.blue_bullseye}
 
     def set_infantry_in_node(self, coalition, node_id, number):
 

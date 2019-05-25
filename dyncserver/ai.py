@@ -12,7 +12,7 @@ def decide_move(group, game_map):
     if group.category != "vehicle":
         return None
 
-    if group.name.startswith("staticgroup"):
+    if "__sg__" in group.name:
         return None
 
     node_id = game_map.find_group_node(group)
@@ -120,9 +120,9 @@ def decide_move(group, game_map):
     decision = np.random.choice(choices)
     extra_info = ""
     if node_is_backtrack[decision] is True:
-        extra_info = "(which is backtracking)"
+        extra_info = " (which is backtracking)"
 
-    logger.info("Final decision for %s: move to node %d. %s" % (group.name, decision, extra_info))
+    logger.info("Final decision for %s: move to node %d.%s" % (group.name, decision, extra_info))
 
     if decision is None:
         return None

@@ -1,6 +1,7 @@
 # noinspection PyPackageRequirements
 import wx
 from graphics import GfxHelper
+import constants
 
 
 class DyncCFrame(wx.Frame):
@@ -68,6 +69,8 @@ class DyncCFrame(wx.Frame):
         # The "\t..." syntax defines an accelerator key that also triggers
         # the same event
         config_item = file_menu.Append(-1, "&Choose config\tCtrl-C", "Choose the .cfg file you want to use")
+        img_item = file_menu.Append(-1, "&Save png\tCtrl-S", "Save the current map to a png")
+        resetcampaign_item = file_menu.Append(-1, "&Reset campaign\tCtrl-R", "Reset the current campaign")
         file_menu.AppendSeparator()
         # When using a stock ID we don't need to specify the menu item's
         # label
@@ -92,6 +95,8 @@ class DyncCFrame(wx.Frame):
         # each of the menu items. That means that when that menu item is
         # activated then the associated handler function will be called.
         self.Bind(wx.EVT_MENU, self.on_config, config_item)
+        self.Bind(wx.EVT_MENU, self.on_save, img_item)
+        self.Bind(wx.EVT_MENU, self.on_reset_campaign, resetcampaign_item)
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
         self.Bind(wx.EVT_MENU, DyncCFrame.on_about, about_item)
 
@@ -106,6 +111,13 @@ class DyncCFrame(wx.Frame):
         self.server.read_config(open_file_dialog.GetPath())
         open_file_dialog.Destroy()
 
+    def on_save(self, _):
+        self.server.save_image()
+
+    def on_reset_campaign(self, _):
+        self.server.reset_campaign()
+
     @staticmethod
     def on_about(_):
-        wx.MessageBox("DynC Server by Markku Koponen", "About DynC Server", wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox("DynC Server (version %s) by Markku Koponen" % constants.app_version,
+                      "About DynC Server", wx.OK | wx.ICON_INFORMATION)
