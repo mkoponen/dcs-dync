@@ -12,7 +12,7 @@ logger = logging.getLogger('general')
 
 class GfxHelper:
 
-    image_size = 750
+    image_size = 1500
 
     @staticmethod
     def map_coords_to_image_coords(map_coords, bbox, img_side_len):
@@ -27,7 +27,7 @@ class GfxHelper:
         return x, y
 
     @staticmethod
-    def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions, mapmarkers=None,
+    def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions, paths=False, mapmarkers=None,
                  bullseyes=None):
 
         if mapmarkers is None:
@@ -99,37 +99,26 @@ class GfxHelper:
 
         GfxHelper.draw_legend(draw_surface=draw)
 
-        font = ImageFont.truetype('verdana.ttf', size=12)
+        font = ImageFont.truetype('verdana.ttf', size=24)
 
         for mapmarker in mapmarkers:
             name = mapmarker["name"].replace("__mm__", "").replace("  ", " ")
             x, y = GfxHelper.map_coords_to_image_coords(mapmarker["pos"], bbox, square_side_len)
             size = draw.textsize(name, font=font)
             x -= size[0] / 2
-            y -= (size[1] / 2) + 3
+            y -= (size[1] / 2) + 6
             draw.text((x, y), name, fill="#000000ff", font=font, align="center")
 
-        font = ImageFont.truetype('verdana.ttf', size=26)
-        line_spacing = 6
+        line_spacing = 12
 
         if bullseyes["red"] is not None:
             x, y = GfxHelper.map_coords_to_image_coords(bullseyes["red"], bbox, square_side_len)
-            message = "◊"
-            color = '#ff0000'
-            size = draw.textsize(message, font=font, spacing=line_spacing)
-            x -= size[0] / 2
-            y -= (size[1] / 2) + 3
-            draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
+            GfxHelper.draw_diamond(draw, x, y, 12, '#ff000090')
         if bullseyes["blue"] is not None:
             x, y = GfxHelper.map_coords_to_image_coords(bullseyes["blue"], bbox, square_side_len)
-            message = "◊"
-            color = '#0000ff'
-            size = draw.textsize(message, font=font, spacing=line_spacing)
-            x -= size[0] / 2
-            y -= (size[1] / 2) + 3
-            draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
+            GfxHelper.draw_diamond(draw, x, y, 12, '#0000ff90')
 
-        font = ImageFont.truetype('verdana.ttf', size=20)
+        font = ImageFont.truetype('verdana.ttf', size=30)
 
         # red_goal and blue_goal contain node ID's. The dictionary coords maps these to graph node coordinates. They are
         # tuples of the form (x, y)
@@ -149,7 +138,7 @@ class GfxHelper:
         size = draw.textsize(message, font=font, spacing=line_spacing)
 
         # Alpha zero = invisible outline
-        draw.ellipse([x - 4, y - 4, x + 4, y + 4], outline="#ffffff00", fill="#ff0000")
+        draw.ellipse([x - 8, y - 8, x + 8, y + 8], outline="#ffffff00", fill="#ff0000")
 
         # Now we still have the problem that draw.text expects to get the coordinates of the top left corner of the
         # text and we really want to place center. We use the text size we just received, for that end.
@@ -157,7 +146,7 @@ class GfxHelper:
         x -= size[0] / 2
         # The +3 is just a magic constant that makes the text LOOK more centered vertically. It was acquired by trying
         # variables until centering was good over several line heights.
-        y -= (size[1] / 2) + 3
+        y -= (size[1] / 2) + 6
 
         draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
 
@@ -169,10 +158,10 @@ class GfxHelper:
         color = '#0000ff'
         size = draw.textsize(message, font=font, spacing=line_spacing)
 
-        draw.ellipse([x - 4, y - 4, x + 4, y + 4], outline="#ffffff00", fill="#0000ff")
+        draw.ellipse([x - 8, y - 8, x + 8, y + 8], outline="#ffffff00", fill="#0000ff")
 
         x -= size[0] / 2
-        y -= (size[1] / 2) + 3
+        y -= (size[1] / 2) + 6
 
         draw.text((x, y), message, fill=color, font=font, align="center", spacing=line_spacing)
 
@@ -201,12 +190,12 @@ class GfxHelper:
 
                 if group_type == "infantry":
 
-                    GfxHelper.draw_triangle(draw_surface=draw, x=x, y=y, triangle_side_len=12.0,
+                    GfxHelper.draw_triangle(draw_surface=draw, x=x, y=y, triangle_side_len=24.0,
                                             outline_color=solid_color, fill_color=symbol_color)
                 elif group_type == "support":
-                    draw.rectangle([x - 6, y - 6, x + 6, y + 6], outline=solid_color, fill=symbol_color)
+                    draw.rectangle([x - 12, y - 12, x + 12, y + 12], outline=solid_color, fill=symbol_color)
                 elif group_type == "vehicle":
-                    draw.ellipse([x - 5, y - 5, x + 5, y + 5], outline=symbol_color, fill=unimportant_symbol_color)
+                    draw.ellipse([x - 10, y - 10, x + 10, y + 10], outline=symbol_color, fill=unimportant_symbol_color)
 
                 # Uncomment these to draw name of unit. Warning: will make things look crowded. Also uncomment the font
                 # definition above the loop.
@@ -216,45 +205,48 @@ class GfxHelper:
                 #     y_text = y - ((size[1] / 2) + 10)
                 #     draw.text((x_text, y_text), group_data["name"], fill=solid_color, font=font)
 
-        for decision in movement_decisions:
-            print(repr(decision))
-            origin_node = decision["origin_node"]
-            destination_node = decision["destination_node"]
+        if paths is True:
+            for decision in movement_decisions:
+                origin_node = decision["origin_node"]
+                destination_node = decision["destination_node"]
 
-            if decision["coalition"] == "red":
-                color = "#ff00007f"
-            elif decision["coalition"] == "blue":
-                color = "#0000ff7f"
-            else:
-                continue
-            if origin_node not in coords or destination_node not in coords:
-                logger.warning('While drawing map, origin (%d) and/or destination (%d) node is not in the dictionary '
-                               '"coords"' % (origin_node, destination_node))
-                continue
-            origin = coords[origin_node]
-            destination = coords[destination_node]
-            origin_x, origin_y = GfxHelper.map_coords_to_image_coords(origin, bbox, square_side_len)
-            dest_x, dest_y = GfxHelper.map_coords_to_image_coords(destination, bbox, square_side_len)
-            draw.line([(origin_x, origin_y), (dest_x, dest_y)], width=4, fill=color)
+                if decision["coalition"] == "red":
+                    color = "#ff00007f"
+                elif decision["coalition"] == "blue":
+                    color = "#0000ff7f"
+                else:
+                    continue
+                if origin_node not in coords or destination_node not in coords:
+                    logger.warning('While drawing map, origin (%d) and/or destination (%d) node is not in the '
+                                   'dictionary "coords"' % (origin_node, destination_node))
+                    continue
+                origin = coords[origin_node]
+                destination = coords[destination_node]
+                origin_x, origin_y = GfxHelper.map_coords_to_image_coords(origin, bbox, square_side_len)
+                dest_x, dest_y = GfxHelper.map_coords_to_image_coords(destination, bbox, square_side_len)
+                draw.line([(origin_x, origin_y), (dest_x, dest_y)], width=6, fill=color)
 
-            # Now we draw an arrowhead to the line. Since we're doing trigonometry, we have to switch to a standard
-            # coordinate system instead of image coordinates. In other words, positive y must be up. Origin and
-            # destination are already in such coordinates, but when we are dealing with image coordinates, we have to
-            # multiply y by -1 in order to move between the two systems.
-            angle = GfxHelper.clockwise_angle(origin, destination)
+                # Now we draw an arrowhead to the line. Since we're doing trigonometry, we have to switch to a standard
+                # coordinate system instead of image coordinates. In other words, positive y must be up. Origin and
+                # destination are already in such coordinates, but when we are dealing with image coordinates, we have
+                # to multiply y by -1 in order to move between the two systems.
+                angle = GfxHelper.clockwise_angle(origin, destination)
 
-            # Coordinates for an arrowhead pointing right, in standard coordinates (positive y is up)
-            arrow_end_coords = [(5, 0), (-1, -5), (-1, 5)]
+                # Coordinates for an arrowhead pointing right, in standard coordinates (positive y is up)
+                arrow_end_coords = [(10, 0), (-2, -10), (-2, 10)]
 
-            # We rotate them clockwise by the line's angle
-            arrow_end_coords = GfxHelper.rotate_points_around_origin_clockwise(arrow_end_coords, angle)
+                # We rotate them clockwise by the line's angle
+                arrow_end_coords = GfxHelper.rotate_points_around_origin_clockwise(arrow_end_coords, angle)
 
-            # We move the rotated head to the end of the line, remembering to translate image coordinates to normal.
-            arrow_end_coords = [GfxHelper.move_point(point, (dest_x, -1 * dest_y)) for point in arrow_end_coords]
+                # We move the rotated head to two thirds of the line, remembering to translate image coordinates to
+                # normal. (Which would be the -1*... at the beginning of y-coordinate)
+                arrow_end_coords = [GfxHelper.move_point(point, ((0.3333*origin_x + 0.6667*dest_x),
+                                                                 -1 * (0.3333*origin_y + 0.6667*dest_y)))
+                                    for point in arrow_end_coords]
 
-            # Finally we translate the result to image coordinates, and we're done. We draw the polygon.
-            arrow_end_coords = [(point[0], -1*point[1]) for point in arrow_end_coords]
-            draw.polygon(arrow_end_coords, outline=color, fill=color)
+                # Finally we translate the result to image coordinates, and we're done. We draw the polygon.
+                arrow_end_coords = [(point[0], -1*point[1]) for point in arrow_end_coords]
+                draw.polygon(arrow_end_coords, outline=color, fill=color)
         buf = BytesIO()
         image.save(buf, format="png")
         image.close()
@@ -271,23 +263,29 @@ class GfxHelper:
         return
 
     @staticmethod
+    def draw_diamond(draw_surface, x, y, radius, color):
+        draw_surface.line([(x, y+radius), (x-radius, y), (x, y-radius), (x+radius, y), (x, y+radius)], fill=color,
+                          width=5)
+        return
+
+    @staticmethod
     def draw_legend(draw_surface):
-        font = ImageFont.truetype('verdana.ttf', size=12)
+        font = ImageFont.truetype('verdana.ttf', size=24)
         neutral_solid_color = "#505050ff"
         neutral_symbol_color = "#50505090"
         neutral_unimportant_symbol_color = "#50505050"
 
-        GfxHelper.draw_triangle(draw_surface=draw_surface, x=5, y=7, triangle_side_len=12.0,
+        GfxHelper.draw_triangle(draw_surface=draw_surface, x=12, y=14, triangle_side_len=24.0,
                                 outline_color=neutral_solid_color, fill_color=neutral_symbol_color)
 
-        draw_surface.text((17, 0), "=infantry", fill="#000000ff", font=font, align="left")
-        draw_surface.rectangle([100, 1, 100 + 12, 1 + 12], outline=neutral_solid_color, fill=neutral_symbol_color)
-        draw_surface.text((117, 0), "=support", fill="#000000ff", font=font, align="left")
-        draw_surface.ellipse([200, 2, 200 + 10, 2 + 10], outline=neutral_solid_color, fill=neutral_unimportant_symbol_color)
-        draw_surface.text((217, 0), "=vehicle", fill="#000000ff", font=font, align="left")
-        draw_surface.text((317, 0), "=bullseye", fill="#000000ff", font=font, align="left")
-        font = ImageFont.truetype('verdana.ttf', size=26)
-        draw_surface.text((300-6, -11), "◊", fill=neutral_solid_color, font=font, align="left")
+        draw_surface.text((34, 0), "=infantry", fill="#000000ff", font=font, align="left")
+        draw_surface.rectangle([200, 2, 200 + 24, 2 + 24], outline=neutral_solid_color, fill=neutral_symbol_color)
+        draw_surface.text((234, 0), "=support", fill="#000000ff", font=font, align="left")
+        draw_surface.ellipse([400, 4, 400 + 20, 4 + 20], outline=neutral_solid_color,
+                             fill=neutral_unimportant_symbol_color)
+        draw_surface.text((434, 0), "=vehicle", fill="#000000ff", font=font, align="left")
+        draw_surface.text((634, 0), "=bullseye", fill="#000000ff", font=font, align="left")
+        GfxHelper.draw_diamond(draw_surface, 612, 16, 12, neutral_symbol_color)
         return
 
     @staticmethod

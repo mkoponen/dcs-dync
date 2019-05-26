@@ -66,6 +66,7 @@ class DynCServer:
         self.window = None
         self.messages_url = None
         self.messages_user = None
+        self.display_map_paths = False
 
         if os.path.isfile(self.conf_file) is False:
             with open(self.conf_file, 'w') as f:
@@ -204,7 +205,8 @@ class DynCServer:
         return GfxHelper.draw_map(graph=self.campaign.map.graph, coords=coords, bbox=bbox,
                                   red_goal=self.campaign.map.red_goal_node, blue_goal=self.campaign.map.blue_goal_node,
                                   groups=passed_groups_dict, movement_decisions=movement_list,
-                                  mapmarkers=graphical_coord_mapmarkers, bullseyes=bullseyes)
+                                  paths=self.display_map_paths, mapmarkers=graphical_coord_mapmarkers,
+                                  bullseyes=bullseyes)
 
     def get_aa_unit_type(self, coalition):
         if coalition != "red" and coalition != "blue":
@@ -602,7 +604,7 @@ class DynCServer:
                 group = groups[group_name]
 
                 # sg = staticgroup, aa = anti-aircraft
-                if group is None or group.category != "vehicle" or "__sg__" in group_name or "__aa__" in group_name:
+                if group is None or group.category != "vehicle" or "__sg__" in group_name or "__spaa__" in group_name:
                     continue
 
                 if group.coalition == "red":
@@ -669,7 +671,7 @@ class DynCServer:
             for coalition in coalitions:
                 if self.campaign.get_resources_generic(coalition) >= 2:
                     self.logger.info("Coalition %s purchases new AA unit" % coalition)
-                    new_dynamic_group = Group(name="Anti-aircraft %s %d (dyn) __aa__" %
+                    new_dynamic_group = Group(name="Anti-aircraft %s %d (dyn) __spaa__" %
                                                    (coalition, self.campaign.aa_unit_id_counter),
                                               group_category="vehicle", coalition=coalition, units=None, dynamic=True)
                     new_dynamic_group.add_unit(Unit(name="Anti-aircraft unit %s %d (dyn)" %
@@ -691,7 +693,7 @@ class DynCServer:
             for group_name in groups:
                 group = groups[group_name]
 
-                if group is None or group.category != "vehicle" or "__aa__" not in group_name:
+                if group is None or group.category != "vehicle" or "__spaa__" not in group_name:
                     continue
 
                 node_id = decide_aa_move(group, self.campaign.map)

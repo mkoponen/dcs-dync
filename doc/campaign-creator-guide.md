@@ -65,9 +65,10 @@ tower instead, due to the patrol order. (Which notices a target immediately and 
 destination). If you notice surprising behavior from airplanes, check that you haven't accidentally placed opposing side
 assets near the airfield.
 
-If you include \_\_aa\_\_ in a vehicle group's groupname, it is considered an Anti-Aircraft unit, and it will move in a
-more conservative fashion, trying to stay behind the absolute front line where tanks are battling each other. If you
-fail to include this tag, A.A. units will move like tanks, and most likely will be massacred by enemy tanks immediately.
+If you include \_\_spaa\_\_ (Self-Propelled Anti-Aircraft )in a vehicle group's groupname, it is considered an
+Anti-Aircraft unit, and it will move in a more conservative fashion, trying to stay behind the absolute front line where
+tanks are battling each other. If you fail to include this tag, A.A. units will move like tanks, and most likely will be
+massacred by enemy tanks immediately.
 
 The tag \_\_in\_\_ ("INfantry") is reserved for dynamically created, "symbolic" infantry units where one unit represents
 a larger group of infantry. Whether this unit actually dies or not during the mission, is entirely ignored. Its original
@@ -80,13 +81,13 @@ mission file either.
 Here is a list of all supported tags. Usable=no means that you must not include this tag in the mission editor, but it
 is only created dynamically by the server.
 
-| *TAG*       | *MEANING*   | *USABLE* |
-|-------------|-------------|----------|
-| \_\_im\_\_  | immortal    | yes      |
-| \_\_ig\_\_  | ignore      | yes      |
-| \_\_mm\_\_  | mapmarker   | yes      |
-| \_\_rom\_\_ | routemarker | yes      |
-| \_\_ob\_\_  | objective   | yes      |
-| \_\_aa\_\_  | antiair     | yes      |
-| \_\_in\_\_  | infantry    | no       |
-| \_\_su\_\_  | support     | no       |
+| *TAG*        | *MEANING*   | *USABLE* |
+|--------------|-------------|----------|
+| \_\_im\_\_   | immortal    | yes      |
+| \_\_ig\_\_   | ignore      | yes      |
+| \_\_mm\_\_   | mapmarker   | yes      |
+| \_\_rom\_\_  | routemarker | yes      |
+| \_\_ob\_\_   | objective   | yes      |
+| \_\_spaa\_\_ | s.p.antiair | yes      |
+| \_\_in\_\_   | infantry    | no       |
+| \_\_su\_\_   | support     | no       |

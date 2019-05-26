@@ -62,7 +62,7 @@ if defined PathRel (
 FINDSTR /C:"dync = {}" "%PathRel%\Scripts\MissionScripting.lua" 1>nul 2>nul
 
 If "%errorlevel%" == "1" (
-	@echo Must add
+	@echo Must add lines to MissionScripting.lua
 ) else (
 	@echo Your MissionScripting.lua is already correct, not doing anything.
 	goto :dyncexistsrel
@@ -71,6 +71,22 @@ If "%errorlevel%" == "1" (
 FOR /F "usebackq tokens=1 delims=:" %%A IN (`FINDSTR /N /C:"dofile('Scripts/ScriptingSystem.lua')" "%PathRel%\Scripts\MissionScripting.lua" 2^>nul`) DO (
 	set /A LineNumber = %%A + 1
 )
+
+del /Q "%PathRel%\Scripts\MissionScripting-backup.lua" 1>nul 2>nul
+rename "%PathRel%\Scripts\MissionScripting.lua" MissionScripting-backup.lua
+
+set Output="%PathRel%\Scripts\MissionScripting.lua"
+
+(for /f "tokens=1* delims=[]" %%a in ('find /n /v "##" ^< "%PathRel%\Scripts\MissionScripting-backup.lua"') do (
+if "%%~a"=="%LineNumber%" (
+echo dync = {}
+echo dofile^(lfs.writedir^(^).."\\Scripts\\DynC.lua"^)
+echo.
+ECHO.%%b
+) ELSE (
+echo.%%b
+)
+)) > %Output%
 
 :dyncexistsrel
 :norel

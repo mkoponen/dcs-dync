@@ -1,14 +1,17 @@
 # noinspection PyPackageRequirements
 import wx
-from graphics import GfxHelper
+from PIL import Image
+from io import BytesIO
 import constants
 
 
 class DyncCFrame(wx.Frame):
+    window_image_size = 750
 
     def __init__(self, *args, **kw):
         self.server = kw.pop("server")
         self.old_image_buffer = None
+        self.paths_menuitem = None
         # ensure the parent's __init__ is called
         super(DyncCFrame, self).__init__(*args, **kw)
 
@@ -36,7 +39,8 @@ class DyncCFrame(wx.Frame):
         self.CreateStatusBar()
         self.SetStatusText("Server is running")
 
-        self.map = wx.StaticBitmap(self.panel, -1, wx.NullBitmap, (0, 0), (GfxHelper.image_size, GfxHelper.image_size))
+        self.map = wx.StaticBitmap(self.panel, -1, wx.NullBitmap, (0, 0), (DyncCFrame.window_image_size,
+                                                                           DyncCFrame.window_image_size))
         vbox.Add(self.map, 1)
 
         self.log_control = wx.TextCtrl(self.panel, style=wx.TE_MULTILINE | wx.TE_READONLY)
@@ -50,7 +54,16 @@ class DyncCFrame(wx.Frame):
         self.log_control.write(contents + "\n")
 
     def update_map(self, img_buffer):
-        png = wx.Image(img_buffer, wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        img_resized_buf = BytesIO()
+        img_buffer.seek(0)
+        img = Image.open(img_buffer)
+        img_buffer.seek(0)
+        img = img.resize((DyncCFrame.window_image_size, DyncCFrame.window_image_size), Image.LANCZOS)
+        img.save(img_resized_buf, format="png")
+        img_resized_buf.seek(0)
+        png = wx.Image(img_resized_buf, wx.BITMAP_TYPE_PNG).ConvertToBitmap()
+        img_resized_buf.close()
+
         self.map.SetBitmap(png)
         if self.old_image_buffer is not None:
             self.old_image_buffer.close()
@@ -69,6 +82,8 @@ class DyncCFrame(wx.Frame):
         # The "\t..." syntax defines an accelerator key that also triggers
         # the same event
         config_item = file_menu.Append(-1, "&Choose config\tCtrl-C", "Choose the .cfg file you want to use")
+        self.paths_menuitem = file_menu.Append(-1, "Display &paths\tCtrl-P", "Display unit paths on map",
+                                               kind=wx.ITEM_CHECK)
         img_item = file_menu.Append(-1, "&Save png\tCtrl-S", "Save the current map to a png")
         resetcampaign_item = file_menu.Append(-1, "&Reset campaign\tCtrl-R", "Reset the current campaign")
         file_menu.AppendSeparator()
@@ -95,6 +110,7 @@ class DyncCFrame(wx.Frame):
         # each of the menu items. That means that when that menu item is
         # activated then the associated handler function will be called.
         self.Bind(wx.EVT_MENU, self.on_config, config_item)
+        self.Bind(wx.EVT_MENU, self.on_paths, self.paths_menuitem)
         self.Bind(wx.EVT_MENU, self.on_save, img_item)
         self.Bind(wx.EVT_MENU, self.on_reset_campaign, resetcampaign_item)
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
@@ -116,6 +132,10 @@ class DyncCFrame(wx.Frame):
 
     def on_reset_campaign(self, _):
         self.server.reset_campaign()
+
+    def on_paths(self, _):
+        self.server.display_map_paths = self.paths_menuitem.IsChecked()
+        self.server.campaign_changed()
 
     @staticmethod
     def on_about(_):
