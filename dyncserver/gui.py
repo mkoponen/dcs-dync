@@ -3,6 +3,7 @@ import wx
 from PIL import Image
 from io import BytesIO
 import constants
+import shutil
 
 
 class DyncCFrame(wx.Frame):
@@ -12,6 +13,7 @@ class DyncCFrame(wx.Frame):
         self.server = kw.pop("server")
         self.old_image_buffer = None
         self.paths_menuitem = None
+        self.bg_vis_menuitem = None
         # ensure the parent's __init__ is called
         super(DyncCFrame, self).__init__(*args, **kw)
 
@@ -58,7 +60,9 @@ class DyncCFrame(wx.Frame):
         img_buffer.seek(0)
         img = Image.open(img_buffer)
         img_buffer.seek(0)
-        img = img.resize((DyncCFrame.window_image_size, DyncCFrame.window_image_size), Image.LANCZOS)
+        img2 = img.resize((DyncCFrame.window_image_size, DyncCFrame.window_image_size), Image.LANCZOS)
+        img.close()
+        img = img2
         img.save(img_resized_buf, format="png")
         img_resized_buf.seek(0)
         png = wx.Image(img_resized_buf, wx.BITMAP_TYPE_PNG).ConvertToBitmap()
@@ -84,7 +88,10 @@ class DyncCFrame(wx.Frame):
         config_item = file_menu.Append(-1, "&Choose config\tCtrl-C", "Choose the .cfg file you want to use")
         self.paths_menuitem = file_menu.Append(-1, "Display &paths\tCtrl-P", "Display unit paths on map",
                                                kind=wx.ITEM_CHECK)
-        img_item = file_menu.Append(-1, "&Save png\tCtrl-S", "Save the current map to a png")
+        bg_item = file_menu.Append(-1, "Set &background image\tCtrl-B", "Set background image to map")
+        self.bg_vis_menuitem = file_menu.Append(-1, "Background &visible\tCtrl-V", "Background image visible",
+                                                kind=wx.ITEM_CHECK)
+        img_item = file_menu.Append(-1, "&Save png\tCtrl-S", "Save the current map as .png")
         resetcampaign_item = file_menu.Append(-1, "&Reset campaign\tCtrl-R", "Reset the current campaign")
         file_menu.AppendSeparator()
         # When using a stock ID we don't need to specify the menu item's
@@ -111,6 +118,9 @@ class DyncCFrame(wx.Frame):
         # activated then the associated handler function will be called.
         self.Bind(wx.EVT_MENU, self.on_config, config_item)
         self.Bind(wx.EVT_MENU, self.on_paths, self.paths_menuitem)
+        self.Bind(wx.EVT_MENU, self.on_background, bg_item)
+        self.Bind(wx.EVT_MENU, self.on_background_visible, self.bg_vis_menuitem)
+        self.bg_vis_menuitem.Check()
         self.Bind(wx.EVT_MENU, self.on_save, img_item)
         self.Bind(wx.EVT_MENU, self.on_reset_campaign, resetcampaign_item)
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
@@ -136,6 +146,22 @@ class DyncCFrame(wx.Frame):
     def on_paths(self, _):
         self.server.display_map_paths = self.paths_menuitem.IsChecked()
         self.server.campaign_changed()
+
+    def on_background(self, _):
+        open_file_dialog = wx.FileDialog(self, "Open", "", "", "Png/Jpg images|*.png;*.jpg;*.jpeg",
+                                         wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        open_file_dialog.ShowModal()
+        file_path = open_file_dialog.GetPath()
+        if file_path is None or len(file_path) == 0:
+            return
+        open_file_dialog.Destroy()
+        shutil.copy2(file_path, self.server.mapbg)
+        self.server.campaign_changed()
+
+    def on_background_visible(self, _):
+        if self.server.display_map_background != self.bg_vis_menuitem.IsChecked():
+            self.server.display_map_background = self.bg_vis_menuitem.IsChecked()
+            self.server.campaign_changed()
 
     @staticmethod
     def on_about(_):

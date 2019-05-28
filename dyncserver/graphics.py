@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 import networkx as nx
 import logging
 import math
+import os.path
 
 matplotlib.use('Agg')
 logger = logging.getLogger('general')
@@ -28,7 +29,7 @@ class GfxHelper:
 
     @staticmethod
     def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions, paths=False, mapmarkers=None,
-                 bullseyes=None):
+                 cornermarkers=None, bullseyes=None, mapbg=None):
 
         if mapmarkers is None:
             mapmarkers = []
@@ -48,36 +49,63 @@ class GfxHelper:
         if width <= height:
             tmp_w = width
             tmp_h = height
-            padding_total = tmp_h / 10
-            print(repr(padding_total))
-            difference = tmp_h - tmp_w
-            bbox[1] += (difference / 2) + (padding_total / 2)
-            bbox[0] -= (difference / 2) + (padding_total / 2)
-            bbox[3] += padding_total / 2
-            bbox[2] -= padding_total / 2
-            tmp_h += padding_total
+            if cornermarkers is None:
+                padding_total = tmp_h / 10
+                difference = tmp_h - tmp_w
+                bbox[1] += (difference / 2) + (padding_total / 2)
+                bbox[0] -= (difference / 2) + (padding_total / 2)
+                bbox[3] += padding_total / 2
+                bbox[2] -= padding_total / 2
+                tmp_h += padding_total
+            else:
+                difference = tmp_h - tmp_w
+                bbox[1] += (difference / 2)
+                bbox[0] -= (difference / 2)
             square_side_len = tmp_h
         else:
             tmp_w = width
             tmp_h = height
-            padding_total = tmp_w / 10
-            difference = tmp_w - tmp_h
-            bbox[3] += (difference / 2) + (padding_total / 2)
-            bbox[2] -= (difference / 2) + (padding_total / 2)
-            bbox[1] += padding_total / 2
-            bbox[0] -= padding_total / 2
-            tmp_w += padding_total
+            if cornermarkers is None:
+                padding_total = tmp_w / 10
+                difference = tmp_w - tmp_h
+                bbox[3] += (difference / 2) + (padding_total / 2)
+                bbox[2] -= (difference / 2) + (padding_total / 2)
+                bbox[1] += padding_total / 2
+                bbox[0] -= padding_total / 2
+                tmp_w += padding_total
+            else:
+                difference = tmp_w - tmp_h
+                bbox[3] += (difference / 2)
+                bbox[2] -= (difference / 2)
             square_side_len = tmp_w
 
+        corner_rectangle = None
+
+        if cornermarkers is not None:
+            min_x, max_x, min_y, max_y = None, None, None, None
+            for cornermarker in cornermarkers:
+                pos = cornermarker["pos"]
+                if max_y is None or max_y < pos[1]:
+                    max_y = pos[1]
+                if min_y is None or min_y > pos[1]:
+                    min_y = pos[1]
+                if max_x is None or max_x < pos[0]:
+                    max_x = pos[0]
+                if min_x is None or min_x > pos[0]:
+                    min_x = pos[0]
+            corner_rectangle = [min_x, max_y, max_x, min_y]
+
         # This draws the node graph as nx supports drawing it. Then we will start drawing over that file.
-        nx.drawing.nx_pylab.draw(graph, coords, node_size=6, node_color="#80e080", edge_color="#a0a0a0")
+        nx.drawing.nx_pylab.draw(graph, coords, node_size=6, node_color="#80e080", edge_color="#505050")
 
         # Axes to bounding box
         plt.axis(bbox)
 
         # Save the graph to this buffer
         buf = BytesIO()
-        plt.savefig(buf, format="png", dpi=100)
+        plt.savefig(buf, format="png", dpi=100, transparent=True)
+        # plt.savefig("C:\\Users\\markk\\DCS-DynC\\test.png", format="png", dpi=100, transparent=True)
+
         plt.close()
         buf.seek(0)
         # Now the graph itself is drawn, and we can start drawing over it with Pillow. We load the original buffer, save
@@ -88,16 +116,80 @@ class GfxHelper:
         # will not blend between the image and the drawing. Since NetworkX saved the graph as RGBA we need to open it,
         # and paste it into a new RGB image. This will allow us to use alpha in the expected way.
 
-        oldimage = Image.open(buf)
-        image = Image.new(mode="RGB", size=(GfxHelper.image_size, GfxHelper.image_size))
-        image.paste(oldimage)
-        oldimage.close()
-        buf.close()
+        graph_image = Image.open(buf)
+        final_image = Image.new(mode="RGB", size=(GfxHelper.image_size, GfxHelper.image_size))
+
+        if mapbg is not None and corner_rectangle is not None and os.path.isfile(mapbg) is True:
+
+            # We want to draw a background image. Now things get really awkward with the alpha values. First, we create
+            # a square version with solid white background, that acts as the ultimate white background of anywhere that
+            # doesn't have the map background image. Pasting images without alpha over anything is fast and simple, and
+            # you don't have to think about the alpha of the underlying image.
+            square_bg_image = Image.new(mode="RGB", size=(GfxHelper.image_size, GfxHelper.image_size), color="#ffffff")
+
+            with open(mapbg, 'rb') as file:
+
+                # This is the map in its original size, which is almost certainly wrong. We find out the proper
+                # rectangle where to put it in the square image. It is found in map coordinates in the corner_rectangle
+                # list. It has to be converted to image coordinates first.
+                bgimg = Image.open(file)
+                x1, y1 = GfxHelper.map_coords_to_image_coords((corner_rectangle[0], corner_rectangle[1]), bbox,
+                                                              square_side_len)
+                x2, y2 = GfxHelper.map_coords_to_image_coords((corner_rectangle[2], corner_rectangle[3]), bbox,
+                                                              square_side_len)
+                # Now we have all the image coordinates, which we turn to integers.
+                x1, x2, y1, y2 = int(round(x1)), int(round(x2)), int(round(y1)), int(round(y2))
+                height = y2 - y1
+                width = x2 - x1
+
+                # Now we know the size of the resized map, and its top left corner. First we resize.
+                bgimg_resized = bgimg.resize((width, height), Image.LANCZOS)
+                bgimg.close()
+                # Now we paste the resized background image over the non-alpha square image. Since it's non-alpha, we
+                # can be sure the resulting image doesn't have any alpha. Variables x1, y1 represent top left.
+                square_bg_image.paste(bgimg_resized, box=(x1, y1))
+                bgimg_resized.close()
+
+                # Only the non-alpha square image remains open now.
+
+            # Now the awkward part starts. We have to composite a new image from the alpha-enabled graph image, and the
+            # square background already created, which is non-alpha. First, we have to now give the square background an
+            # alpha channel, though we know that no pixel actually has anything but 1.0 alpha yet. (Since it came from a
+            # non-alpha image)
+            composited_image = Image.new("RGBA", size=(GfxHelper.image_size, GfxHelper.image_size))
+
+            # Since both of these images only have fully opaque pixels, we can simply paste without worry.
+            composited_image.paste(square_bg_image)
+            square_bg_image.close()
+
+            # But now comes the complex and slower part. We have to composite the graph and the background together.
+            # Simple paste will not suffice anymore.
+            composited_image = Image.alpha_composite(composited_image, graph_image)
+            graph_image.close()
+            buf.close()
+
+            # And ultimately, we want to convert everything back to a non-alpha image, due to the ImageDraw quirk that
+            # was already mentioned.
+            final_image.paste(composited_image)
+
+            composited_image.close()
+        else:
+            # Since we didn't want the map background, now things are really simple. We simply paste the graph image,
+            # and it loses its alpha channel because it's pasted over a non-alpha image. All transparency is converted
+            # to white, just like we wanted.
+            final_image.paste(graph_image)
+            graph_image.close()
 
         # Ok, now we are through with the alpha channel unpleasantness, and can start drawing.
-        draw = ImageDraw.Draw(image, mode="RGBA")
+        draw = ImageDraw.Draw(final_image, mode="RGBA")
 
         GfxHelper.draw_legend(draw_surface=draw)
+
+        if cornermarkers is not None:
+            for cornermarker in cornermarkers:
+                x = cornermarker["pos"][0]
+                y = cornermarker["pos"][1]
+                draw.ellipse([x - 10, y - 10, x + 10, y + 10], outline="#000000", fill="#000000")
 
         font = ImageFont.truetype('verdana.ttf', size=24)
 
@@ -248,8 +340,8 @@ class GfxHelper:
                 arrow_end_coords = [(point[0], -1*point[1]) for point in arrow_end_coords]
                 draw.polygon(arrow_end_coords, outline=color, fill=color)
         buf = BytesIO()
-        image.save(buf, format="png")
-        image.close()
+        final_image.save(buf, format="png")
+        final_image.close()
         buf.seek(0)
 
         return buf

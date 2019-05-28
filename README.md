@@ -74,10 +74,14 @@ all the infantry in it by the next turn, that side is declared the winner. If bo
 the same turn, it is declared a draw. Otherwise the campaign can only end with the players agreeing to stop playing. The
 rules will be described more accurately in another file, soon.
 
+If the campaign creator has chosen to support it in a campaign, you can place the campaign map from DCS World Mission
+Editor as the background of the dynamically created map in the server window. In the Mozdok example campaign this is
+supported, and you will find the appropriate background in the same folder as the .miz file. Activate it by clicking
+File - Set background image, making sure that Background visible is checked.
+
 ## Creating campaigns
 
-This section is to be written later. The next goal in the project is to create one playable campaign and bundle it with
-the installer. After some playtesting with that campaign, instructions will be written for creating your own campaigns.
+See [Campaign Creator Guide](doc/campaign-creator-guide.md).
 
 ## Optional advanced section: Not using the precompiled installer
 

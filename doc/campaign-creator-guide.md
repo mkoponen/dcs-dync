@@ -57,6 +57,23 @@ other static object type for these markers, because some of them cannot be delet
 the current version of DCS World at the time of writing. For example smoke is not recognized as a proper static object
 for deletion, and would remain on the playing field.
 
+It is possible to put the actual DCS map as a background image to the dynamically generated map. However, since we have
+to connect the coordinates to each other, this requires a bit of effort. First, make two ammo crates just like with
+mapmarkers, but name them \_\_cm\_\_ ("CornerMarker"). Their group names don't matter, other than having the tag in
+exactly two ammo crates. Place them exactly to the two diagonally opposite corners of where you intend to grab the map
+with a screenshot. Save the mission file after you have placed the objects, as their coordinates are necessary for
+connecting the two coordinate systems. They will not appear in the actual mission, just like mapmarkers don't. After
+saving, click CUSTOMIZE - MAP OPTIONS in the top menu, and temporarily uncheck USER OBJECTS. This will show you a clean
+map. Now take the screenshot with Print Screen on your keyboard, being sure to not have panned or zoomed the map between
+these two actions. This will place a capture of your entire screen to the clipboard. Now, paste that image to an image
+editing software such as Photoshop or Gimp (free). Crop the image to just the map portion of the screen, leaving out the
+user interface. Instructions for cropping images should be easy to find with Google. Save the cropped image as Png or
+Jpg. Then, in the server software, click File - Set background image, navigate to the file you saved and click Open.
+This will save the file to your working directory as the current background. You may want to deliver this file along
+with any .miz files you distribute, to make the user's job easier. If you don't, the user can still do it by taking the
+appropriate screenshot. Remember to save the .png or .jpg somewhere, as the data in your working directory will get
+overwritten when you change the background after starting some other campaign.
+
 Any orders you might give to any other planes than those with \_\_ig\_\_ in their group name, are simply ignored. The
 server will locate the group of tanks that it considers to be the greatest current threat to that side, and commands the
 plane to patrol in that area. Please note that the DCS World A.I. can make some undesirable decisions; for example
@@ -81,13 +98,14 @@ mission file either.
 Here is a list of all supported tags. Usable=no means that you must not include this tag in the mission editor, but it
 is only created dynamically by the server.
 
-| *TAG*        | *MEANING*   | *USABLE* |
-|--------------|-------------|----------|
-| \_\_im\_\_   | immortal    | yes      |
-| \_\_ig\_\_   | ignore      | yes      |
-| \_\_mm\_\_   | mapmarker   | yes      |
-| \_\_rom\_\_  | routemarker | yes      |
-| \_\_ob\_\_   | objective   | yes      |
-| \_\_spaa\_\_ | s.p.antiair | yes      |
-| \_\_in\_\_   | infantry    | no       |
-| \_\_su\_\_   | support     | no       |
+| *TAG*        | *MEANING*    | *USABLE* |
+|--------------|--------------|----------|
+| \_\_im\_\_   | immortal     | yes      |
+| \_\_ig\_\_   | ignore       | yes      |
+| \_\_mm\_\_   | mapmarker    | yes      |
+| \_\_cm\_\_   | cornermarker | yes      |
+| \_\_rom\_\_  | routemarker  | yes      |
+| \_\_ob\_\_   | objective    | yes      |
+| \_\_spaa\_\_ | s.p.antiair  | yes      |
+| \_\_in\_\_   | infantry     | no       |
+| \_\_su\_\_   | support      | no       |

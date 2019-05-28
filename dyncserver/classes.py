@@ -203,6 +203,10 @@ class Map:
             new_map.mapmarkers = serializable_dict["mapmarkers"]
         else:
             new_map.mapmarkers = []
+        if "cornermarkers" in serializable_dict:
+            new_map.cornermarkers = serializable_dict["cornermarkers"]
+        else:
+            new_map.cornermarkers = None
 
         return new_map
 
@@ -278,6 +282,7 @@ class Map:
         self.max_support_units_in_group = 7
         self.num_support_units = {"red": self.max_support_units_in_group, "blue": self.max_support_units_in_group}
         self.mapmarkers = []
+        self.cornermarkers = None
         self.red_bullseye = None
         self.blue_bullseye = None
 
@@ -349,27 +354,41 @@ class Map:
         positions = {}
         min_x, max_x, min_y, max_y = None, None, None, None
 
+        if self.cornermarkers is not None:
+            for cornermarker in self.cornermarkers:
+                pos = cornermarker["pos"]
+                if max_y is None or max_y < pos[0]:
+                    max_y = pos[0]
+                if min_y is None or min_y > pos[0]:
+                    min_y = pos[0]
+                if max_x is None or max_x < pos[1]:
+                    max_x = pos[1]
+                if min_x is None or min_x > pos[1]:
+                    min_x = pos[1]
+
         for node, value in nodes:
             positions[node] = [value[1], value[0]]
-            if max_y is None or max_y < value[0]:
-                max_y = value[0]
-            if min_y is None or min_y > value[0]:
-                min_y = value[0]
-            if max_x is None or max_x < value[1]:
-                max_x = value[1]
-            if min_x is None or min_x > value[1]:
-                min_x = value[1]
+            if self.cornermarkers is None:
+                if max_y is None or max_y < value[0]:
+                    max_y = value[0]
+                if min_y is None or min_y > value[0]:
+                    min_y = value[0]
+                if max_x is None or max_x < value[1]:
+                    max_x = value[1]
+                if min_x is None or min_x > value[1]:
+                    min_x = value[1]
 
         for mapmarker in self.mapmarkers:
             pos = mapmarker["pos"]
-            if max_y is None or max_y < pos[0]:
-                max_y = pos[0]
-            if min_y is None or min_y > pos[0]:
-                min_y = pos[0]
-            if max_x is None or max_x < pos[1]:
-                max_x = pos[1]
-            if min_x is None or min_x > pos[1]:
-                min_x = pos[1]
+            if self.cornermarkers is None:
+                if max_y is None or max_y < pos[0]:
+                    max_y = pos[0]
+                if min_y is None or min_y > pos[0]:
+                    min_y = pos[0]
+                if max_x is None or max_x < pos[1]:
+                    max_x = pos[1]
+                if min_x is None or min_x > pos[1]:
+                    min_x = pos[1]
         return positions, [min_x, max_x, min_y, max_y]
 
     def to_serializable(self):
@@ -393,7 +412,8 @@ class Map:
         return {"groups_in_nodes": serialized_groups_in_nodes, "infantry_in_nodes": serialized_infantry_in_nodes,
                 "red_goal_node": self.red_goal_node, "blue_goal_node": self.blue_goal_node, "graph": serializable_graph,
                 "support_unit_nodes": self.support_unit_nodes, "num_support_units": self.num_support_units,
-                "mapmarkers": self.mapmarkers, "red_bullseye": self.red_bullseye, "blue_bullseye": self.blue_bullseye}
+                "mapmarkers": self.mapmarkers, "cornermarkers": self.cornermarkers, "red_bullseye": self.red_bullseye,
+                "blue_bullseye": self.blue_bullseye}
 
     def set_infantry_in_node(self, coalition, node_id, number):
 

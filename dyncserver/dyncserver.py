@@ -49,7 +49,7 @@ class DynCServer:
         '# URL = https://discordapp.com/api/webhooks/SOMETHING\n' \
         'USER = DynC Server\n'
 
-    def __init__(self, campaign_json, conf_file):
+    def __init__(self, campaign_json, conf_file, mapbg):
         self.logger = logging.getLogger('general')
         self.logger.setLevel(logging.DEBUG)
         self.log_file_handler = None
@@ -61,12 +61,14 @@ class DynCServer:
         self.campaign = None
         self.campaign_json = campaign_json
         self.conf_file = conf_file
+        self.mapbg = mapbg
         self.config = ConfigParser()
         self.server_thread = None
         self.window = None
         self.messages_url = None
         self.messages_user = None
         self.display_map_paths = False
+        self.display_map_background = True
 
         if os.path.isfile(self.conf_file) is False:
             with open(self.conf_file, 'w') as f:
@@ -196,17 +198,28 @@ class DynCServer:
             graphical_coord_mapmarkers.append({"name": mapmarker["name"],
                                                "pos": (mapmarker["pos"][1], mapmarker["pos"][0])})
 
+        if self.campaign.map.cornermarkers is None:
+            graphical_coord_cornermarkers = None
+        else:
+            graphical_coord_cornermarkers = []
+            for cornermarker in self.campaign.map.cornermarkers:
+                graphical_coord_cornermarkers.append({"pos": (cornermarker["pos"][1], cornermarker["pos"][0])})
+
         bullseyes = {"red": None, "blue": None}
         if self.campaign.map.red_bullseye is not None:
             bullseyes["red"] = (self.campaign.map.red_bullseye[1], self.campaign.map.red_bullseye[0])
         if self.campaign.map.blue_bullseye is not None:
             bullseyes["blue"] = (self.campaign.map.blue_bullseye[1], self.campaign.map.blue_bullseye[0])
 
+        param_mapbg = None
+        if self.display_map_background is True:
+            param_mapbg = self.mapbg
+
         return GfxHelper.draw_map(graph=self.campaign.map.graph, coords=coords, bbox=bbox,
                                   red_goal=self.campaign.map.red_goal_node, blue_goal=self.campaign.map.blue_goal_node,
                                   groups=passed_groups_dict, movement_decisions=movement_list,
                                   paths=self.display_map_paths, mapmarkers=graphical_coord_mapmarkers,
-                                  bullseyes=bullseyes)
+                                  cornermarkers=graphical_coord_cornermarkers, bullseyes=bullseyes, mapbg=param_mapbg)
 
     def get_aa_unit_type(self, coalition):
         if coalition != "red" and coalition != "blue":
@@ -364,6 +377,13 @@ class DynCServer:
                     point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
                     mapmarkers.append({"name": real_name, "pos": (point.x, point.y)})
 
+            cornermarkers = []
+            if "cornermarkers" in obj:
+                for cornermarker in obj["cornermarkers"]:
+                    split_pos = cornermarker["pos"].split(",")
+                    point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
+                    cornermarkers.append({"pos": (point.x, point.y)})
+
             if os.path.isfile(self.campaign_json) is True:
                 # Note: dynamically generated units are not included by default by units_match; DCS wouldn't know about
                 # them
@@ -477,6 +497,10 @@ class DynCServer:
             # has any markers at all, don't change it.
             if (self.campaign.map.mapmarkers is None or len(self.campaign.map.mapmarkers) == 0) and len(mapmarkers) > 0:
                 self.campaign.map.mapmarkers = mapmarkers
+
+            if (self.campaign.map.cornermarkers is None or len(self.campaign.map.cornermarkers) == 0) and \
+                    len(cornermarkers) > 0:
+                self.campaign.map.cornermarkers = cornermarkers
 
             if self.campaign.map.red_bullseye is None:
                 split_pos = bullseyes["red"].split(",")
@@ -810,7 +834,8 @@ def main():
         pass
 
     server_obj = DynCServer(campaign_json=os.path.join(user_directory, "campaign.json"),
-                            conf_file=os.path.join(user_directory, "setup.cfg"))
+                            conf_file=os.path.join(user_directory, "setup.cfg"),
+                            mapbg=os.path.join(user_directory, "map-bg.dat"))
     server_thread = ServerThread()
     server_thread.daemon = True
     app = wx.App()

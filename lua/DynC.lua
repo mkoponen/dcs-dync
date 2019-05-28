@@ -589,6 +589,11 @@ do
 				-- mm: mapmarker
 				return
 			end
+			
+			if string.find(name, "__cm__") or string.find(groupname, "__cm__") then
+				-- cm: cornermarker
+				return
+			end
 
 			if string.find(name, "__su__") then
 				-- su: support unit
@@ -670,6 +675,7 @@ do
 		jsonobj["routes"] = {}
 		jsonobj["goals"] = {}
 		jsonobj["mapmarkers"] = {}
+		jsonobj["cornermarkers"] = {}
 		jsonobj["bullseye"] = {}
 		
 		if mist.DBs.missionData.bullseye.red ~= nil then
@@ -721,6 +727,19 @@ do
 				mapmarker["name"] = v["group"]
 				mapmarker["pos"] = v["pos"]
 				table.insert(jsonobj["mapmarkers"], mapmarker)
+				
+				if Unit.getByName(k) then
+					Unit.getByName(k):destroy()
+				elseif StaticObject.getByName(k) then					
+					StaticObject.getByName(k):destroy()				
+				end
+				jsonobj["units"][k] = nil
+				
+			elseif string.find(k, "__cm__") or string.find(v["group"], "__cm__") then
+			
+				cornermarker = {}
+				cornermarker["pos"] = v["pos"]
+				table.insert(jsonobj["cornermarkers"], cornermarker)
 				
 				if Unit.getByName(k) then
 					Unit.getByName(k):destroy()

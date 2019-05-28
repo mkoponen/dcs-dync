@@ -72,6 +72,7 @@ Section "Install Server"
   
   ; File "/oname=DCS World Files\beachparty-example1.miz" "..\bin\beachparty-example1.miz"
   File "/oname=DCS World Files\mozdok-example1.miz" "..\bin\mozdok-example1.miz"
+  File "/oname=DCS World Files\mozdok-example1-background-image.png" "..\bin\mozdok-example1-background-image.png"
   
   ; Write the installation path into the registry
   WriteRegStr HKLM SOFTWARE\DCS-DynC "Install_Dir" "$INSTDIR"
