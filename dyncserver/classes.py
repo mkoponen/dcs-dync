@@ -930,6 +930,11 @@ class Campaign:
 
     def find_potential_battles(self):
 
+        # Finds all adjacent enemy groups of vehicles. Only these groups could potentially engage in a battle in this
+        # turn, as units only travel one segment. Getting included does not yet mean that the battle in fact happens.
+        # Note that the pairs generated are not where the groups currently are, but in the movement decisions such that
+        # if they were to happen, would result in battle. The second stage of the process is to check that they in fact
+        # happened. That is outside the scope of this function.
         potential_battles = []
 
         for node_id in self.map.groups_in_nodes:
@@ -942,13 +947,16 @@ class Campaign:
                     if node_id2 in self.map.groups_in_nodes:
                         for group_name2 in self.map.groups_in_nodes[int(node_id2)]:
                             if {int(node_id2): group_name, int(node_id): group_name2} in potential_battles:
+                                # Already in the list, no need to add again.
                                 continue
                             group2 = self.map.groups_in_nodes[int(node_id2)][group_name2]
                             if group2.category != "vehicle":
                                 continue
                             if group2.coalition != group.coalition:
-                                # logger.info("Potential battle between groups %s, entering to %d and %s, entering to "
-                                #             "%d " % (group_name, node_id2, group_name2, node_id))
+                                # Not yet in list, are opposing coalitions, and are adjacent. Only now add to list.
+                                # again, note the order in which we add them, comparing keys to values: 1 to 2 and 2 to
+                                # 1. That is because this doesn't represent current locations, but the dangerous
+                                # destination locations.
                                 potential_battles.append({int(node_id2): group_name, int(node_id): group_name2})
 
         return potential_battles

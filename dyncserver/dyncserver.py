@@ -517,10 +517,12 @@ class DynCServer:
             decisions = self.campaign.get_movement_decisions()
 
             # This is a bit ugly. It looks like DCS scripting has some kind of a bug where a group ignores its route if
-            # it is given too early, or something else that teleporting the group appears to fix. Because the problem
+            # it is given too early, or something else that teleporting the group appears to fix, as the problem has
             # only manifested on the first stage, and the only difference is the lack of teleporting. In order to force
             # all stages to behave the same, and thereby remove one variable in debugging this problem, we crudely make
-            # the first stage teleport too, to the units' original location.
+            # the first stage teleport too, roughly to the units' original location. Note that this also means that you
+            # shouldn't bother to set the individual unit positions on any groups except those that have __ig__ tag. The
+            # teleporting, and the random scattering that is done while teleporting, will make it of none effect.
             if self.campaign.stage == 0:
                 for group_name in groups:
                     group = groups[group_name]
@@ -532,9 +534,15 @@ class DynCServer:
 
             # list of dicts of the format:
             # [{ node_id: group_name, node_id: group_name}, {node_id: group_name, node_id: group_name}, ...]
-            # So, if both moves of a list item actually get decided, the result is a battle; placing both groups
-            # at the center.
+
+            # This function finds all enemy vehicle groups in adjacent nodes. It creates a list of pairs of those
+            # groups. Next, we have to check if the battle in fact happened, but this first step allows us to eliminate
+            # most of the groups already. The pairs contain the nodes where the groups currently are.
             potential_battles = self.campaign.find_potential_battles()
+
+            # So, if both moves of a list item actually get decided, the result is a battle; placing both groups
+            # at the center. That is to say, if group 1 of the pair decided to move to the node of group 2 in the pair,
+            # and vice versa. Both of the aforementioned conditions have to be true in order for there to be a battle.
 
             # We create a list of battles that fulfill both conditions of a potential battle.
             actual_battles = []
@@ -548,23 +556,39 @@ class DynCServer:
 
             for group_name in decisions:
                 if decisions[group_name] not in decided_moves:
+                    # Remember: The key is the node where we move to.
                     decided_moves[decisions[group_name]] = []
+                # And to this key, we now append the group that is moving there.
                 decided_moves[decisions[group_name]].append(group_name)
 
-            # Now we know what everyone has decided, and we know what pair of decisions result in battle.
+            # Now we know what everyone has decided, and we know what pair of decisions result in battle. In other
+            # words, decided_moves now tells us for every node, what groups have decided to move there, containing a
+            # list of those group names. If no group has decided to move to a node, the node does not exist in the dict.
 
+            # Remember: These were pairs of adjacent nodes, where and only where a battle could imaginably happen. They
+            # represent the DESTINATION nodes, such that if these decisions were to happen exactly, it would result in
+            # and actual battle and not just a potential one.
             for potential_battle in potential_battles:
 
+                # There are exactly two keys in potential_battle, and they are node numbers. We make a list from them,
+                # so that they would be a bit easier to refer to.
                 the_nodes = list(potential_battle.keys())
 
-                if the_nodes[0] in decided_moves and potential_battle[the_nodes[0]] in decided_moves[the_nodes[0]] and \
-                   the_nodes[1] in decided_moves and potential_battle[the_nodes[1]] in decided_moves[the_nodes[1]]:
+                # This is the most important condition. It takes a bit of unpacking. Remember, the key of
+                # potential_battle was the node ID, and the value was the group name. So, potential_battle[the_nodes[0]]
+                # gives you the name of the first group, potentially moving to a dangerous destination location, and
+                # same for [1]. The decided_moves[], on the other hand, tells us if it ACTUALLY moved to that location
+                # and not just potentially. So, if both potential movements of the pair are found in the actual
+                # movements, that and only that means a battle.
+                if the_nodes[0] in decided_moves and the_nodes[1] in decided_moves and \
+                        potential_battle[the_nodes[0]] in decided_moves[the_nodes[0]] and \
+                        potential_battle[the_nodes[1]] in decided_moves[the_nodes[1]]:
 
                     # Both conditions have in fact happened. Now we just check the battle isn't already scheduled.
                     # (group1, group2) is considered equivalent to (group2, group1)
 
                     if (potential_battle[the_nodes[0]], potential_battle[the_nodes[1]]) not in actual_battles and \
-                       (potential_battle[the_nodes[1]], potential_battle[the_nodes[0]]):
+                       (potential_battle[the_nodes[1]], potential_battle[the_nodes[0]]) not in actual_battles:
 
                         # Battle was not yet scheduled. Do it now.
 
