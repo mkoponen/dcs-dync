@@ -14,6 +14,9 @@ if defined PathBeta (
 ) else (
     goto :nobeta
 )
+if "%PathBeta:~-1%" == " " (
+	set PathBeta=%PathBeta:~0,-1%
+)
 
 FINDSTR /C:"dync = {}" "%PathBeta%\Scripts\MissionScripting.lua" 1>nul 2>nul
 
@@ -57,6 +60,9 @@ if defined PathRel (
 	set DCS_FOUND=1
 ) else (
     goto :norel
+)
+if "%PathRel:~-1%" == " " (
+	set PathRel=%PathRel:~0,-1%
 )
 
 FINDSTR /C:"dync = {}" "%PathRel%\Scripts\MissionScripting.lua" 1>nul 2>nul
