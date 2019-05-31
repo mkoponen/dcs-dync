@@ -47,7 +47,14 @@ class DynCServer:
         '# LOG_FILE = C:\\dync.log\n\n' \
         '[comms]\n\n# Uncomment and replace with correct URL to have the server post to a Discord channel\n' \
         '# URL = https://discordapp.com/api/webhooks/SOMETHING\n' \
-        'USER = DynC Server\n'
+        'USER = DynC Server\n\n' \
+        '[scoring]\n\n' \
+        'UNIT_DISTANCE_MAX_MULTIPLIER = 1.0\n' \
+        'UNIT_BASE_SCORE = 10.0\n' \
+        'PLAYER_EJECT_SCORE = 50.0\n' \
+        'PLAYER_DEATH_SCORE = 100.0\n' \
+        'AI_EJECT_SCORE = 5.0\n' \
+        'AI_DEATH_SCORE = 10.0\n'
 
     def __init__(self, campaign_json, conf_file, mapbg):
         self.logger = logging.getLogger('general')
@@ -69,6 +76,13 @@ class DynCServer:
         self.messages_user = None
         self.display_map_paths = False
         self.display_map_background = True
+        self.unit_distance_max_multiplier = 1.0
+        self.unit_base_score = 10.0
+
+        self.player_eject_score = 50.0
+        self.player_death_score = 100.0
+        self.ai_eject_score = 5.0
+        self.ai_death_score = 10.0
 
         if os.path.isfile(self.conf_file) is False:
             with open(self.conf_file, 'w') as f:
@@ -79,10 +93,19 @@ class DynCServer:
     def init_campaign(self):
         if os.path.isfile(self.campaign_json) is False:
             game_map = Map()
-            self.campaign = Campaign(stage=0, game_map=game_map)
+            self.campaign = Campaign(stage=0, game_map=game_map, software_version=constants.app_version)
         else:
             with open(self.campaign_json, 'r') as f:
-                self.campaign = Campaign.from_serializable(json.loads(f.read()))
+                campaign_json = json.loads(f.read())
+                if Campaign.is_compatible(campaign_json):
+                    self.campaign = Campaign.from_serializable(campaign_json)
+                else:
+                    self.logger.warning("Found a campaign with which this version is not backwards compatible: "
+                                        "We have reset campaign.")
+                    f.close()
+                    self.delete_campaign()
+                    game_map = Map()
+                    self.campaign = Campaign(stage=0, game_map=game_map, software_version=constants.app_version)
 
     def post_init(self):
         if self.campaign.stage > 0:
@@ -114,6 +137,18 @@ class DynCServer:
         if self.config.has_option("comms", "URL") and self.config.has_option("comms", "USER"):
             self.messages_url = self.config.get("comms", "URL")
             self.messages_user = self.config.get("comms", "USER")
+        if self.config.has_option("scoring", "UNIT_DISTANCE_MAX_MULTIPLIER"):
+            self.unit_distance_max_multiplier = float(self.config.get("scoring", "UNIT_DISTANCE_MAX_MULTIPLIER"))
+        if self.config.has_option("scoring", "UNIT_BASE_SCORE"):
+            self.unit_base_score = float(self.config.get("scoring", "UNIT_BASE_SCORE"))
+        if self.config.has_option("scoring", "PLAYER_EJECT_SCORE"):
+            self.player_eject_score = float(self.config.get("scoring", "PLAYER_EJECT_SCORE"))
+        if self.config.has_option("scoring", "PLAYER_DEATH_SCORE"):
+            self.player_death_score = float(self.config.get("scoring", "PLAYER_DEATH_SCORE"))
+        if self.config.has_option("scoring", "AI_EJECT_SCORE"):
+            self.ai_eject_score = float(self.config.get("scoring", "AI_EJECT_SCORE"))
+        if self.config.has_option("scoring", "AI_DEATH_SCORE"):
+            self.ai_death_score = float(self.config.get("scoring", "AI_DEATH_SCORE"))
 
         self.log_file_handler.setLevel(log_file_level)
         self.log_file_handler.setFormatter(self.log_file_formatter)
@@ -215,11 +250,61 @@ class DynCServer:
         if self.display_map_background is True:
             param_mapbg = self.mapbg
 
+        # scores = self.get_scores()
+        # if scores[0] is None:
+        #     return
+        # score = {"red": scores[0], "blue": scores[1]}
+        # for group_name in groups_dict:
+        #     group = groups_dict[group_name]
+        #     if group.category != "vehicle":
+        #         continue
+        #     node_id = self.campaign.map.find_group_node(group)
+        #     multiplier = self.campaign.map.multipliers_for_red[node_id]
+        #     if multiplier is None:
+        #         multiplier = 0.0
+        #     elif group.coalition == "blue":
+        #         multiplier = 1.0 - multiplier
+        #     multiplier *= self.unit_distance_max_multiplier
+        #     added_score = (1.0 + multiplier) * group.num_units() * self.unit_base_score
+        #     score[group.coalition] += added_score
+
         return GfxHelper.draw_map(graph=self.campaign.map.graph, coords=coords, bbox=bbox,
                                   red_goal=self.campaign.map.red_goal_node, blue_goal=self.campaign.map.blue_goal_node,
                                   groups=passed_groups_dict, movement_decisions=movement_list,
                                   paths=self.display_map_paths, mapmarkers=graphical_coord_mapmarkers,
-                                  cornermarkers=graphical_coord_cornermarkers, bullseyes=bullseyes, mapbg=param_mapbg)
+                                  cornermarkers=graphical_coord_cornermarkers, bullseyes=bullseyes, mapbg=param_mapbg,
+                                  score=None)
+
+    # Red first, then blue
+    def get_scores(self):
+        if self.campaign is None or self.campaign.map is None:
+            self.logger.warning("Cannot draw map: No campaign in progress")
+            return None, None
+        score_red, score_blue = 0.0, 0.0
+        groups_dict = self.campaign.map.groups()
+
+        for group_name in groups_dict:
+            group = groups_dict[group_name]
+            if group.category != "vehicle":
+                continue
+            node_id = self.campaign.map.find_group_node(group)
+            multiplier = self.campaign.map.multipliers_for_red[node_id]
+            if multiplier is None:
+                multiplier = 0.0
+            elif group.coalition == "blue":
+                multiplier = 1.0 - multiplier
+            multiplier *= self.unit_distance_max_multiplier
+            added_score = (1.0 + multiplier) * group.num_units() * self.unit_base_score
+
+            if group.coalition == "red":
+                score_red += added_score
+            else:
+                score_blue += added_score
+
+        score_red += self.campaign.extra_scores["red"]
+        score_blue += self.campaign.extra_scores["blue"]
+        score_red, score_blue = int(round(score_red)), int(round(score_blue))
+        return score_red, score_blue
 
     def get_aa_unit_type(self, coalition):
         if coalition != "red" and coalition != "blue":
@@ -232,7 +317,7 @@ class DynCServer:
         try:
             os.remove(self.campaign_json)
         except OSError:
-            pass
+            self.logger.warning("Failed to delete campaign file %s" % self.campaign_json, exc_info=True)
         self.campaign = None
 
     def missionend(self, _):
@@ -326,10 +411,41 @@ class DynCServer:
         if self.campaign.map.get_num_support_units(coalition) <= 2:
             self.logger.info("Support for coalition %s is now considered destroyed" % coalition)
 
+    def changescore(self, reason, coalition, unit_name):
+        if coalition != "red" and coalition != "blue":
+            self.logger.warning("Coalition must be 'red' or 'blue' to changescore; was %s" % coalition)
+            return
+        if self.campaign is None:
+            self.logger.warning("No campaign in progress while reporting score")
+            return
+        # Points go to the opposing coalition
+        if coalition == "red":
+            points_coalition = "blue"
+        else:
+            points_coalition = "red"
+        self.logger.info("Score event, reason %s, to coalition %s, unit %s" % (reason, points_coalition, unit_name))
+        if reason == "player_eject":
+            self.campaign.extra_scores[points_coalition] += self.player_eject_score
+        elif reason == "player_death":
+            self.campaign.extra_scores[points_coalition] += self.player_death_score
+        elif reason == "ai_eject":
+            self.campaign.extra_scores[points_coalition] += self.ai_eject_score
+        elif reason == "ai_death":
+            self.campaign.extra_scores[points_coalition] += self.ai_death_score
+        else:
+            pass
+        scores = self.get_scores()
+
+        if scores[0] is None or scores[1] is None:
+            return
+
+        self.logger.info("--Changed score: red %s, blue %s--" % (repr(scores[0]), repr(scores[1])))
+        self.window.update_score(scores)
+
     def unitdestroyed(self, unitname, groupname):
+
         # noinspection PyBroadException
         try:
-            self.logger.info("Destroyed unit: %s, group: %s" % (unitname, groupname))
             group = self.campaign.map.find_group_by_name(groupname)
 
             if group is None:
@@ -391,6 +507,7 @@ class DynCServer:
                     self.logger.warning("Mismatch in units reported by DCS, and our existing campaign file. "
                                         "Resetting campaign.")
                     self.reset_campaign()
+
             must_update_distances = False
             # Merging the graph can be reasonably costly, so we do it only once
             if self.campaign.map.graph is None:
@@ -510,6 +627,12 @@ class DynCServer:
                 split_pos = bullseyes["blue"].split(",")
                 point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
                 self.campaign.map.blue_bullseye = (point.x, point.y)
+
+            if self.campaign.map.multipliers_for_red is None:
+                self.campaign.map.multipliers_for_red = {}
+                for node_id in self.campaign.map.graph:
+                    self.campaign.map.multipliers_for_red[node_id] = \
+                        self.campaign.map.get_node_extra_multiplier(node_id, "red")
 
             groups = self.campaign.map.groups()
             groups_pos = {}
@@ -796,6 +919,9 @@ class DynCServer:
                           "dyngroups": self.campaign.get_all_dynamic_groups()}
 
             with open(self.campaign_json, 'w') as f:
+                # Upon saving, we always update the version number of the campaign file to the present version, since
+                # this app version is now fully its creator.
+                self.campaign.software_version = constants.app_version
                 json.dump(self.campaign.to_serializable(), f)
 
             self.campaign_changed()
@@ -809,6 +935,10 @@ class DynCServer:
         if self.campaign.map.graph is not None:
             buf = server_obj.get_graph_image()
             self.window.update_map(buf)
+            scores = self.get_scores()
+            if scores[0] is None or scores[1] is None:
+                return
+            self.window.update_score(scores)
 
     def save_image(self):
 
@@ -823,6 +953,52 @@ class DynCServer:
         else:
             self.logger.warning("No map has been received yet")
 
+    @staticmethod
+    def version_string_to_number(version_str):
+
+        # We convert version numbers into a single number that is then easy to properly compare. Our scheme requires
+        # that none of the four numbers are higher than 99.
+        str_split = version_str.split(".")
+
+        # 1.0.0.0-post3 -type version names are allowed, but a hyphen may only occur in the very last number.
+        if "-" in str_split[-1]:
+            post_split = str_split[-1].split("-")
+            # For calculating compatibility, we ignore the post. Any -postX version may never break compatibility, or
+            # it must actually increment a number if it would.
+            str_split[-1] = post_split[0]
+        len_split = len(str_split)
+        for i in range(4):
+            if i < len_split:
+                try:
+                    str_split[i] = int(str_split[i])
+                except ValueError:
+                    return None
+                if str_split[i] >= 100:
+                    return None
+            else:
+                str_split.append(0)
+        ver_num = 0
+        multiplier = 1
+        for i in range(4):
+            ver_num += multiplier * str_split[3 - i]
+            multiplier *= 100
+        return ver_num
+
+    def get_version_numbers(self):
+
+        app_num = DynCServer.version_string_to_number(constants.app_version)
+        if app_num is None:
+            self.logger.fatal("The version string %s is not valid" % constants.app_version)
+            return None, None
+
+        comp_num = DynCServer.version_string_to_number(constants.backwards_compatibility_min_version)
+        if comp_num is None:
+            self.logger.fatal("The compatibility version string %s is not valid" %
+                              constants.backwards_compatibility_min_version)
+            return None, None
+
+        return app_num, comp_num
+
 
 @Request.application
 def application(request):
@@ -832,6 +1008,7 @@ def application(request):
     dispatcher["unitdestroyed"] = server_obj.unitdestroyed
     dispatcher["missionend"] = server_obj.missionend
     dispatcher["supportdestroyed"] = server_obj.supportdestroyed
+    dispatcher["changescore"] = server_obj.changescore
 
     response = JSONRPCResponseManager.handle(
         request.data, dispatcher)

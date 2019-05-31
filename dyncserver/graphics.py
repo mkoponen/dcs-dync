@@ -29,7 +29,7 @@ class GfxHelper:
 
     @staticmethod
     def draw_map(graph, coords, bbox, red_goal, blue_goal, groups, movement_decisions, paths=False, mapmarkers=None,
-                 cornermarkers=None, bullseyes=None, mapbg=None):
+                 cornermarkers=None, bullseyes=None, mapbg=None, score=None):
 
         if mapmarkers is None:
             mapmarkers = []
@@ -104,8 +104,6 @@ class GfxHelper:
         # Save the graph to this buffer
         buf = BytesIO()
         plt.savefig(buf, format="png", dpi=100, transparent=True)
-        # plt.savefig("C:\\Users\\markk\\DCS-DynC\\test.png", format="png", dpi=100, transparent=True)
-
         plt.close()
         buf.seek(0)
         # Now the graph itself is drawn, and we can start drawing over it with Pillow. We load the original buffer, save
@@ -184,6 +182,8 @@ class GfxHelper:
         draw = ImageDraw.Draw(final_image, mode="RGBA")
 
         GfxHelper.draw_legend(draw_surface=draw)
+        if score is not None:
+            GfxHelper.draw_score(draw_surface=draw, score=score)
 
         if cornermarkers is not None:
             for cornermarker in cornermarkers:
@@ -379,6 +379,14 @@ class GfxHelper:
         draw_surface.text((634, 0), "=bullseye", fill="#000000ff", font=font, align="left")
         GfxHelper.draw_diamond(draw_surface, 612, 16, 12, neutral_symbol_color)
         return
+
+    @staticmethod
+    def draw_score(draw_surface, score):
+        font = ImageFont.truetype('verdana.ttf', size=24)
+        draw_surface.text((5, 30), "%d" % score["red"], fill="#ff0000", font=font, align="left")
+        size = draw_surface.textsize("%d" % score["red"], font=font)
+        draw_surface.text((5+size[0]+5, 30), "-", fill="#000000", font=font, align="left")
+        draw_surface.text((5+size[0]+18, 30), "%d" % score["blue"], fill="#0000ff", font=font, align="right")
 
     @staticmethod
     def rotate_point_around_origin_clockwise(point, radians):

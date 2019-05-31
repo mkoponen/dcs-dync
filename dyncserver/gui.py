@@ -4,6 +4,9 @@ from PIL import Image
 from io import BytesIO
 import constants
 import shutil
+import logging
+
+logger = logging.getLogger('general')
 
 
 class DyncCFrame(wx.Frame):
@@ -41,6 +44,12 @@ class DyncCFrame(wx.Frame):
         self.CreateStatusBar()
         self.SetStatusText("Server is running")
 
+        self.score = wx.TextCtrl(self.panel, style=wx.TE_READONLY | wx.TE_RICH, size=(-1, 30))
+        font = self.score.GetFont()
+        font.PointSize = 14
+        self.score.SetFont(font)
+        vbox.Add(self.score, 0, wx.EXPAND)
+
         self.map = wx.StaticBitmap(self.panel, -1, wx.NullBitmap, (0, 0), (DyncCFrame.window_image_size,
                                                                            DyncCFrame.window_image_size))
         vbox.Add(self.map, 1)
@@ -73,6 +82,18 @@ class DyncCFrame(wx.Frame):
             self.old_image_buffer.close()
         self.old_image_buffer = img_buffer
         self.panel.Layout()
+
+    def update_score(self, score):
+        if score is None or score[0] is None or score[1] is None:
+            logger.warning("update_score got invalid score dict: %s" % repr(score))
+            return
+        self.score.Clear()
+        self.score.SetDefaultStyle(wx.TextAttr(wx.RED))
+        self.score.write("%d" % score[0])
+        self.score.SetDefaultStyle(wx.TextAttr(wx.BLACK))
+        self.score.write(" - ")
+        self.score.SetDefaultStyle(wx.TextAttr(wx.BLUE))
+        self.score.write("%d" % score[1])
 
     def make_menu_bar(self):
         """

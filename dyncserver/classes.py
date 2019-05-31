@@ -1,6 +1,8 @@
 import networkx as nx
 import euclid3
 import logging
+import common
+import constants
 
 logger = logging.getLogger('general')
 
@@ -207,6 +209,12 @@ class Map:
             new_map.cornermarkers = serializable_dict["cornermarkers"]
         else:
             new_map.cornermarkers = None
+        if "multipliers_for_red" in serializable_dict:
+            new_map.multipliers_for_red = {}
+            for key in serializable_dict["multipliers_for_red"]:
+                new_map.multipliers_for_red[int(key)] = serializable_dict["multipliers_for_red"][key]
+        else:
+            new_map.multipliers_for_red = None
 
         return new_map
 
@@ -285,11 +293,11 @@ class Map:
         self.cornermarkers = None
         self.red_bullseye = None
         self.blue_bullseye = None
+        self.multipliers_for_red = None
 
     def get_num_units_in_node(self, coalition, node_id):
         if coalition != "red" and coalition != "blue":
-            logger.error("Cannot get number of support units: Coalition must be either 'red' or 'blue'; was: '%s'" %
-                         coalition)
+            logger.error("Cannot get number of units: Coalition must be either 'red' or 'blue'; was: '%s'" % coalition)
             return None
         node_id = int(node_id)
         num_so_far = 0
@@ -413,7 +421,7 @@ class Map:
                 "red_goal_node": self.red_goal_node, "blue_goal_node": self.blue_goal_node, "graph": serializable_graph,
                 "support_unit_nodes": self.support_unit_nodes, "num_support_units": self.num_support_units,
                 "mapmarkers": self.mapmarkers, "cornermarkers": self.cornermarkers, "red_bullseye": self.red_bullseye,
-                "blue_bullseye": self.blue_bullseye}
+                "blue_bullseye": self.blue_bullseye, "multipliers_for_red": self.multipliers_for_red}
 
     def set_infantry_in_node(self, coalition, node_id, number):
 
@@ -765,8 +773,48 @@ class Map:
         logger.info("Greatest threat: node %d, coordinates %f,%f" % (ordered_threats[0][0], coords[0], coords[1]))
         return int(ordered_threats[0][0])
 
+    def get_node_extra_multiplier(self, node_id, coalition):
+        red = self.red_goal_node
+        blue = self.blue_goal_node
+        try:
+            path_to_red = nx.dijkstra_path(self.graph, node_id, red)
+        except nx.NetworkXNoPath:
+            return None
+        try:
+            path_to_blue = nx.dijkstra_path(self.graph, node_id, blue)
+        except nx.NetworkXNoPath:
+            return None
+        if len(path_to_red) <= 2:
+            return 1.0
+        if len(path_to_blue) <= 2:
+            return 0.0
+        multiplier_for_red = (len(path_to_blue)-2.0) / ((len(path_to_red)-2.0) + (len(path_to_blue)-2.0))
+        if coalition == "red":
+            return multiplier_for_red
+        elif coalition == "blue":
+            return 1.0 - multiplier_for_red
+        else:
+            return None
+
 
 class Campaign:
+
+    @staticmethod
+    def is_compatible(campaign_json):
+        if "software_version" not in campaign_json or campaign_json["software_version"] is None:
+            return False
+        campaign_num = common.version_string_to_number(campaign_json["software_version"])
+        if campaign_num is None:
+            logger.error("Invalid app version number in campaign file '%s'. Assuming campaign is incompatible." %
+                         campaign_json["software_version"])
+
+        compatibility_num = common.version_string_to_number(constants.backwards_compatibility_min_version)
+        if compatibility_num is None:
+            logger.error("This app version has an invalid compatibility version number, which is a bug. For now, "
+                         "assuming campaign is incompatible." % constants.backwards_compatibility_min_version)
+            return False
+
+        return campaign_num >= compatibility_num
 
     @staticmethod
     def from_serializable(serializable_dict):
@@ -806,25 +854,42 @@ class Campaign:
             allowed_aa_units = serializable_dict["allowed_aa_units"]
         else:
             allowed_aa_units = None
+        if "extra_scores" in serializable_dict and serializable_dict["extra_scores"] is not None:
+            extra_scores = serializable_dict["extra_scores"]
+        else:
+            extra_scores = None
+        if "software_version" in serializable_dict and serializable_dict["software_version"] is not None:
+            software_version = serializable_dict["software_version"]
+        else:
+            software_version = "0.0.0.0"
 
         return Campaign(stage=stage, game_map=new_map, destroyed_unit_names_and_groups=destroyed_unit_names_and_groups,
                         resources_generic=resources_generic, unit_movement_decisions=unit_movement_decisions,
-                        aa_unit_id_counter=aa_unit_id_counter, allowed_aa_units=allowed_aa_units)
+                        aa_unit_id_counter=aa_unit_id_counter, allowed_aa_units=allowed_aa_units,
+                        extra_scores=extra_scores, software_version=software_version)
 
     def __init__(self, game_map, stage=0, destroyed_unit_names_and_groups=None, resources_generic=None,
-                 unit_movement_decisions=None, aa_unit_id_counter=1, allowed_aa_units=None):
+                 unit_movement_decisions=None, aa_unit_id_counter=1, allowed_aa_units=None, extra_scores=None,
+                 software_version=None):
         if destroyed_unit_names_and_groups is None:
             destroyed_unit_names_and_groups = {}
         if unit_movement_decisions is None:
             unit_movement_decisions = {}
+        if software_version is None:
+            software_version = "0.0.0.0"
         self.stage = stage
         self.map = game_map
         self.destroyed_unit_names_and_groups = destroyed_unit_names_and_groups
         self.max_infantry_in_node = 4
+        self.software_version = software_version
         if allowed_aa_units is None:
             self.allowed_aa_units = {"red": [], "blue": []}
         else:
             self.allowed_aa_units = allowed_aa_units
+        if extra_scores is None:
+            self.extra_scores = {"red": 0, "blue": 0}
+        else:
+            self.extra_scores = extra_scores
         self.aa_unit_id_counter = aa_unit_id_counter
         if resources_generic is not None:
             self.resources_generic = resources_generic
@@ -969,4 +1034,5 @@ class Campaign:
         return {"stage": self.stage, "map": serializable_map,
                 "destroyed_unit_names_and_groups": self.destroyed_unit_names_and_groups,
                 "resources_generic": self.resources_generic, "unit_movement_decisions": self.unit_movement_decisions,
-                "aa_unit_id_counter": self.aa_unit_id_counter, "allowed_aa_units": self.allowed_aa_units}
+                "aa_unit_id_counter": self.aa_unit_id_counter, "allowed_aa_units": self.allowed_aa_units,
+                "extra_scores": self.extra_scores, "software_version": self.software_version}

@@ -517,6 +517,7 @@ do
 	local live_units = {}
 	local fly_commands = {}
 	local delayed_routes = {}
+	local scored_planes = {}
 	server = json.rpc.proxy(dync_socket)
 
 
@@ -525,6 +526,198 @@ do
 	local center_randomness = 0.0
 	local dispersion = 300.0
 	local disable_roads = true
+	
+	unitTypes = {}
+	unitTypes.navy = {}
+	unitTypes.navy.blue = {
+	  VINSON = "VINSON",
+	  PERRY = "PERRY",
+	  TICONDEROG = "TICONDEROG"
+	}
+	unitTypes.navy.red = {
+	  ALBATROS = "ALBATROS",
+	  KUZNECOW = "KUZNECOW",
+	  MOLNIYA = "MOLNIYA",
+	  MOSCOW = "MOSCOW",
+	  NEUSTRASH = "NEUSTRASH",
+	  PIOTR = "PIOTR",
+	  REZKY = "REZKY"
+	}
+	unitTypes.navy.civil = {
+	  ELNYA = "ELNYA",
+	  Drycargo_ship2 = "Dry-cargo ship-2",
+	  Drycargo_ship1 = "Dry-cargo ship-1",
+	  ZWEZDNY = "ZWEZDNY"
+	}
+	unitTypes.navy.submarine = {
+	  KILO = "KILO",
+	  SOM = "SOM"
+	}
+	unitTypes.navy.speedboat = {
+	  speedboat = "speedboat"
+	}
+	unitTypes.vehicles = {}
+	unitTypes.vehicles.Howitzers = {
+	  _2B11_mortar = "2B11 mortar",
+	  SAU_Gvozdika = "SAU Gvozdika",
+	  SAU_Msta = "SAU Msta",
+	  SAU_Akatsia = "SAU Akatsia",
+	  SAU_2C9 = "SAU 2-C9",
+	  M109 = "M-109"
+	}
+	unitTypes.vehicles.IFV = {
+	  AAV7 = "AAV7",
+	  BMD1 = "BMD-1",
+	  BMP1 = "BMP-1",
+	  BMP2 = "BMP-2",
+	  BMP3 = "BMP-3",
+	  Boman = "Boman",
+	  BRDM2 = "BRDM-2",
+	  BTR80 = "BTR-80",
+	  BTR_D = "BTR_D",
+	  Bunker = "Bunker",
+	  Cobra = "Cobra",
+	  LAV25 = "LAV-25",
+	  M1043_HMMWV_Armament = "M1043 HMMWV Armament",
+	  M1045_HMMWV_TOW = "M1045 HMMWV TOW",
+	  M1126_Stryker_ICV = "M1126 Stryker ICV",
+	  M113 = "M-113",
+	  M1134_Stryker_ATGM = "M1134 Stryker ATGM",
+	  M2_Bradley = "M-2 Bradley",
+	  Marder = "Marder",
+	  MCV80 = "MCV-80",
+	  MTLB = "MTLB",
+	  Paratrooper_RPG16 = "Paratrooper RPG-16",
+	  Paratrooper_AKS74 = "Paratrooper AKS-74",
+	  Sandbox = "Sandbox",
+	  Soldier_AK = "Soldier AK",
+	  Infantry_AK = "Infantry AK",
+	  Soldier_M249 = "Soldier M249",
+	  Soldier_M4 = "Soldier M4",
+	  Soldier_M4_GRG = "Soldier M4 GRG",
+	  Soldier_RPG = "Soldier RPG",
+	  TPZ = "TPZ"
+	}
+	unitTypes.vehicles.MLRS = {
+	  GradURAL = "Grad-URAL",
+	  Uragan_BM27 = "Uragan_BM-27",
+	  Smerch = "Smerch",
+	  MLRS = "MLRS"
+	}
+	unitTypes.vehicles.SAM = {
+	  _2S6_Tunguska = "2S6 Tunguska",
+	  Kub_2P25_ln = "Kub 2P25 ln",
+	  _5p73_s125_ln = "5p73 s-125 ln",
+	  S300PS_5P85C_ln = "S-300PS 5P85C ln",
+	  S300PS_5P85D_ln = "S-300PS 5P85D ln",
+	  SA11_Buk_LN_9A310M1 = "SA-11 Buk LN 9A310M1",
+	  Osa_9A33_ln = "Osa 9A33 ln",
+	  Tor_9A331 = "Tor 9A331",
+	  Strela10M3 = "Strela-10M3",
+	  Strela1_9P31 = "Strela-1 9P31",
+	  SA11_Buk_CC_9S470M1 = "SA-11 Buk CC 9S470M1",
+	  SA8_Osa_LD_9T217 = "SA-8 Osa LD 9T217",
+	  Patriot_AMG = "Patriot AMG",
+	  Patriot_ECS = "Patriot ECS",
+	  Gepard = "Gepard",
+	  Hawk_pcp = "Hawk pcp",
+	  SA18_Igla_manpad = "SA-18 Igla manpad",
+	  SA18_Igla_comm = "SA-18 Igla comm",
+	  Igla_manpad_INS = "Igla manpad INS",
+	  SA18_IglaS_manpad = "SA-18 Igla-S manpad",
+	  SA18_IglaS_comm = "SA-18 Igla-S comm",
+	  Vulcan = "Vulcan",
+	  Hawk_ln = "Hawk ln",
+	  M48_Chaparral = "M48 Chaparral",
+	  M6_Linebacker = "M6 Linebacker",
+	  Patriot_ln = "Patriot ln",
+	  M1097_Avenger = "M1097 Avenger",
+	  Patriot_EPP = "Patriot EPP",
+	  Patriot_cp = "Patriot cp",
+	  Roland_ADS = "Roland ADS",
+	  S300PS_54K6_cp = "S-300PS 54K6 cp",
+	  Stinger_manpad_GRG = "Stinger manpad GRG",
+	  Stinger_manpad_dsr = "Stinger manpad dsr",
+	  Stinger_comm_dsr = "Stinger comm dsr",
+	  Stinger_manpad = "Stinger manpad",
+	  Stinger_comm = "Stinger comm",
+	  ZSU234_Shilka = "ZSU-23-4 Shilka",
+	  ZU23_Emplacement_Closed = "ZU-23 Emplacement Closed",
+	  ZU23_Emplacement = "ZU-23 Emplacement",
+	  ZU23_Closed_Insurgent = "ZU-23 Closed Insurgent",
+	  Ural375_ZU23_Insurgent = "Ural-375 ZU-23 Insurgent",
+	  ZU23_Insurgent = "ZU-23 Insurgent",
+	  Ural375_ZU23 = "Ural-375 ZU-23"
+	}
+	unitTypes.vehicles.radar = {
+	  _1L13_EWR = "1L13 EWR",
+	  Kub_1S91_str = "Kub 1S91 str",
+	  S300PS_40B6M_tr = "S-300PS 40B6M tr",
+	  S300PS_40B6MD_sr = "S-300PS 40B6MD sr",
+	  _55G6_EWR = "55G6 EWR",
+	  S300PS_64H6E_sr = "S-300PS 64H6E sr",
+	  SA11_Buk_SR_9S18M1 = "SA-11 Buk SR 9S18M1",
+	  Dog_Ear_radar = "Dog Ear radar",
+	  Hawk_tr = "Hawk tr",
+	  Hawk_sr = "Hawk sr",
+	  Patriot_str = "Patriot str",
+	  Hawk_cwar = "Hawk cwar",
+	  p19_s125_sr = "p-19 s-125 sr",
+	  Roland_Radar = "Roland Radar",
+	  snr_s125_tr = "snr s-125 tr"
+	}
+	unitTypes.vehicles.Structures = {
+	  house1arm = "house1arm",
+	  house2arm = "house2arm",
+	  outpost_road = "outpost_road",
+	  outpost = "outpost",
+	  houseA_arm = "houseA_arm"
+	}
+	unitTypes.vehicles.Tanks = {
+	  Challenger2 = "Challenger2",
+	  Leclerc = "Leclerc",
+	  Leopard1A3 = "Leopard1A3",
+	  Leopard2 = "Leopard-2",
+	  M60 = "M-60",
+	  M1128_Stryker_MGS = "M1128 Stryker MGS",
+	  M1_Abrams = "M-1 Abrams",
+	  T55 = "T-55",
+	  T72B = "T-72B",
+	  T80UD = "T-80UD",
+	  T90 = "T-90"
+	}
+	unitTypes.vehicles.unarmed = {
+	  Ural4320_APA5D = "Ural-4320 APA-5D",
+	  ATMZ5 = "ATMZ-5",
+	  ATZ10 = "ATZ-10",
+	  GAZ3307 = "GAZ-3307",
+	  GAZ3308 = "GAZ-3308",
+	  GAZ66 = "GAZ-66",
+	  M978_HEMTT_Tanker = "M978 HEMTT Tanker",
+	  HEMTT_TFFT = "HEMTT TFFT",
+	  IKARUS_Bus = "IKARUS Bus",
+	  KAMAZ_Truck = "KAMAZ Truck",
+	  LAZ_Bus = "LAZ Bus",
+	  Hummer = "Hummer",
+	  M_818 = "M 818",
+	  MAZ6303 = "MAZ-6303",
+	  Predator_GCS = "Predator GCS",
+	  Predator_TrojanSpirit = "Predator TrojanSpirit",
+	  Suidae = "Suidae",
+	  Tigr_233036 = "Tigr_233036",
+	  Trolley_bus = "Trolley bus",
+	  UAZ469 = "UAZ-469",
+	  Ural_ATsP6 = "Ural ATsP-6",
+	  Ural375_PBU = "Ural-375 PBU",
+	  Ural375 = "Ural-375",
+	  Ural432031 = "Ural-4320-31",
+	  Ural4320T = "Ural-4320T",
+	  VAZ_Car = "VAZ Car",
+	  ZiL131_APA80 = "ZiL-131 APA-80",
+	  SKP11 = "SKP-11",
+	  ZIL131_KUNG = "ZIL-131 KUNG",
+	  ZIL4331 = "ZIL-4331"
+	}
 
 
 
@@ -538,7 +731,7 @@ do
 
 			for k,v in pairs(live_units) do
 
-				if string.find(v["unitname"], "__im__") or string.find(v["groupname"], "__im__") then
+				if string.find(v["unitname"], "__im__") or string.find(v["groupname"], "__im__") or string.find(v["groupname"], "__ig__") then
 					-- Ignore
 				else
 					local unit = Unit.getByName(v["unitname"])
@@ -567,17 +760,78 @@ do
 			end
 		elseif event.id == world.event.S_EVENT_DEAD or event.id == world.event.S_EVENT_PILOT_DEAD or
 				event.id == world.event.S_EVENT_CRASH or event.id == world.event.S_EVENT_EJECTION then
+				
+			env.info(string.format("Some death event %d, where dead=%d, pilot_dead=%d, crash=%d, eject=%d", event.id, world.event.S_EVENT_DEAD, 
+			world.event.S_EVENT_PILOT_DEAD, world.event.S_EVENT_CRASH, world.event.S_EVENT_EJECTION), false)			
+			
+			if event.initiator == nil then
+				env.info("Event initiator was nil: ignore event", false)
+				return
+			end
 
 			local name = event.initiator:getName()
+			
+			if scored_planes[name] ~= nil then
+				env.info("Unit "..name.." already scored: Ignore further death events", false)
+				return
+			end
+			
 			-- Somewhat crudely handle object types that don't have groups. Make the apparent group name the unit name.
 			local groupname = name
+			local is_unit = false
 			if Object.getCategory(event.initiator) == 1 then
+				is_unit = true
 				groupname = Unit.getGroup(event.initiator):getName()
 			end
 
 			if string.find(name, "__ig__") or string.find(groupname, "__ig__") then
 				-- ig: ignore
 				return
+			end
+			
+			local already_scored = false
+			
+			-- __ig__ (Ignore) handled. Planes for any other tag are still scored, so we handle that here.
+			
+			if scored_planes[name] ~= nil then
+				already_scored = true				
+			elseif is_unit == true then
+				local unit_table = mist.DBs.unitsByName[name]
+				if unit_table["category"] == "plane" then
+					local coalition_str
+					local coalition_id = event.initiator:getCoalition()
+					if coalition_id == coalition.side.RED then
+						coalition_str = "red"
+					elseif coalition_id == coalition.side.BLUE then
+						coalition_str = "blue"
+					else
+						return
+					end				
+				
+					env.info(string.format("Some plane died, of skill %s", unit_table["skill"]), false)
+					scored_planes[name] = true
+					
+					if unit_table["skill"] ~= nil and (unit_table["skill"] == "Player" or unit_table["skill"] == "Client") then
+						env.info(string.format("Player plane died"), false)
+						if event.id == world.event.S_EVENT_EJECTION then							
+							local result, error = server.changescore({"player_eject", coalition_str, name})
+						else
+							local result, error = server.changescore({"player_death", coalition_str, name})
+						end
+						already_scored = true
+						
+					elseif unit_table["skill"] ~= nil then
+						env.info(string.format("A.I. plane died"), false)
+						
+						if event.id == world.event.S_EVENT_EJECTION then
+							scored_planes[name] = true
+							local result, error = server.changescore({"ai_eject", coalition_str, name})
+						else
+							local result, error = server.changescore({"ai_death", coalition_str, name})							
+						end
+						already_scored = true
+					end					
+				end
 			end
 
 			if string.find(name, "__im__") or string.find(groupname, "__im__") then
@@ -597,12 +851,12 @@ do
 
 			if string.find(name, "__su__") then
 				-- su: support unit
-				local coalition = event.initiator:getCoalition()
+				local coalition_id = event.initiator:getCoalition()
 
-				if coalition == coalition.side.RED then
+				if coalition_id == coalition.side.RED then
 					local result, error = server.supportdestroyed({"red",})
 					env.info("Reported red coalition support unit destroyed", false)
-				elseif coalition == coalition.side.BLUE then
+				elseif coalition_id == coalition.side.BLUE then
 					local result, error = server.supportdestroyed({"blue",})
 					env.info("Reported blue coalition support unit destroyed", false)				
 				end
@@ -621,10 +875,23 @@ do
 						if Object.getCategory(event.initiator) == 1 then
 							groupname = Unit.getGroup(event.initiator):getName()
 						end
+						local coalition_str
+						local coalition_id = event.initiator:getCoalition()
+						if coalition_id == coalition.side.RED then
+							coalition_str = "red"
+						elseif coalition_id == coalition.side.BLUE then
+							coalition_str = "blue"
+						else
+							return
+						end
+						
 						local result, error = server.unitdestroyed({name, groupname})
 						env.info("Reported destroyed unit: "..name..", group: "..groupname, false)
 						live_units[k] = nil
 						found_it = true
+						if already_scored == false then
+							local result, error = server.changescore({"unit_destroyed", coalition_str, name})
+						end
 						break
 					end
 				end
@@ -750,15 +1017,15 @@ do
 
 			elseif string.starts(k, "objective") or string.find(k, "__ob__") or string.find(v["group"], "__ob__") then
 
-				local coalition = v["coalition"]
+				local coalition_str = v["coalition"]
 				local spl = string.split(v["pos"], ",")
 				local x = spl[0]
 				local y = spl[1]
 
-				if (coalition == "red" or coalition == "blue") then
+				if (coalition_str == "red" or coalition_str == "blue") then
 
 					-- Neutrals are ignored. They are simply deleted.
-					jsonobj["goals"][coalition] = x..","..y
+					jsonobj["goals"][coalition_str] = x..","..y
 				end
 
 				Unit.getByName(k):destroy()
