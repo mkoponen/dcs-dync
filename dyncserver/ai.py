@@ -48,7 +48,7 @@ def decide_move(group, game_map):
             neighbor_paths.append(shortest_path_to_goal)
 
     if len(neighbor_paths) == 0:
-        logger.warning("No path to goal found for group %s" % str(group))
+        logger.warning("No path to goal found for group %s" % group.name)
         return None
 
     if len(neighbor_paths) == 1:

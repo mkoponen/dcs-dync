@@ -174,6 +174,38 @@ class DynCServer:
             item_clean = item.strip().replace('"', '')
             self.campaign.allowed_aa_units["blue"].append(item_clean)
 
+    def rewrite_config(self):
+        with open(self.conf_file, 'w') as fp:
+            comments = \
+                '# INSTRUCTIONS\n#\n' \
+                '# USA AA types: "Vulcan" "M1097 Avenger" "M48 Chaparral" "Hawk cwar" "Hawk ln" "Hawk pcp"\n' \
+                '# "Hawk sr" "Hawk tr" "M6 Linebacker" "Patriot AMG" "Patriot ECS" "Patriot EPP" "Patriot cp"\n' \
+                '# "Patriot ln" "Patriot str" "Soldier stinger" "Stinger comm"\n' \
+                '# \n' \
+                '# Russia AA types: "ZU-23 Emplacement" "ZU-23 Emplacement Closed" "Ural-375 ZU-23"\n' \
+                '# "Dog Ear radar" "1L13 EWR" "55G6 EWR" "S-300PS 54K6 cp" "S-300PS 5P85C ln" "S-300PS 5P85D ln"\n' \
+                '# "S-300PS 40B6MD sr" "S-300PS 64H6E sr" "S-300PS 40B6M tr" "SA-11 Buk CC 9S470M1"\n' \
+                '# "SA-11 Buk LN 9A310M1" "SA-11 Buk SR 9S18M1" "Strela-10M3" "Tor 9A331" "SA-18 Igla-S comm"\n' \
+                '# "SA-18 Igla-S manpad" "2S6 Tunguska" "5p73 s-125 ln" "p-19 s-125 sr"\n' \
+                '# "snr s-125 tr" "Kub 2P25 ln" "Kub 1S91 str" "Osa 9A33 ln" "Strela-1 9P31" "ZSU-23-4 Shilka"\n' \
+                '# \n' \
+                '# Note that you need to put unit names in quotes so that we know what whitespace belongs to unit\n' \
+                '# name. Unquoted spaces confuse the parser when there are commas involved.\n' \
+                '# Example line of several units:\n' \
+                '# aa_red = "ZSU-23-4 Shilka", "Ural-375 ZU-23"\n#\n' \
+                '# Fields of type "log_x_level" mean the lowest log level to write. 1=Debug, 2=Info, 3=Warning, \n' \
+                '# 4=Error, 5=Critical\n#\n' \
+                '# Add the line below to [logging] to use a particular log directory. Make sure you are permitted\n' \
+                '# to write to it.\n' \
+                '# log_file = C:\\dync.log\n#\n' \
+                '# Add the line below to [comms] with correct URL to have the server post to a Discord channel. The\n' \
+                '# "user" field already there is the username of the Discord bot doing the posting.\n' \
+                '# url = https://discordapp.com/api/webhooks/SOMETHING\n#\n' \
+                '# Please note that if you comment something out of this config, the comment will disappear the\n' \
+                '# next time that the software re-writes the config.\n\n'
+            fp.write(comments)
+            self.config.write(fp)
+
     def reset_campaign(self):
         self.delete_campaign()
         self.init_campaign()
@@ -332,7 +364,7 @@ class DynCServer:
 
             if len(groups) == 0:
                 self.logger.info("Draw: All units destroyed!")
-                self.delete_campaign()
+                self.reset_campaign()
                 return '{"code": "0", "event": "end", "result": "Draw: All units destroyed"}'
 
             for group_name in groups:
@@ -374,17 +406,17 @@ class DynCServer:
 
             if victory_red is True and victory_blue is True:
                 self.logger.info("Draw: Both sides enter the other's base")
-                self.delete_campaign()
+                self.reset_campaign()
                 self.post_message_if_necessary("Draw: Both sides enter the other\'s base")
                 return '{"code": "0", "event": "end", "result": "Draw: Both sides enter the other\'s base"}'
             elif victory_red is True:
                 self.logger.info("Red coalition won")
-                self.delete_campaign()
+                self.reset_campaign()
                 self.post_message_if_necessary("Red coalition won")
                 return '{"code": "0", "event": "end", "result": "Red coalition won"}'
             elif victory_blue is True:
                 self.logger.info("Blue coalition won")
-                self.delete_campaign()
+                self.reset_campaign()
                 self.post_message_if_necessary("Blue coalition won")
                 return '{"code": "0", "event": "end", "result": "Blue coalition won"}'
 
