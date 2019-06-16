@@ -122,7 +122,7 @@ def decide_move(group, game_map):
     if node_is_backtrack[decision] is True:
         extra_info = " (which is backtracking)"
 
-    logger.info("Final decision for %s: move to node %d.%s" % (group.name, decision, extra_info))
+    logger.debug("Final decision for %s: move to node %d.%s" % (group.name, decision, extra_info))
 
     if decision is None:
         return None
@@ -131,7 +131,7 @@ def decide_move(group, game_map):
 
 
 def find_aa_target_node(group, game_map):
-    logger.info("Deciding target node for aa group %s" % group.name)
+    logger.debug("Deciding target node for aa group %s" % group.name)
     furthest_nodes = game_map.find_furtherst_own_groups_nodes(group.coalition)
 
     if furthest_nodes is None or len(furthest_nodes) == 0:
@@ -171,14 +171,14 @@ def decide_aa_move(group, game_map):
     correct_goal = find_aa_target_node(group, game_map)
 
     if node_id == correct_goal:
-        logger.info("AA unit %s already in goal" % group.name)
+        logger.debug("AA unit %s already in goal" % group.name)
         return int(correct_goal)
 
     if correct_goal is None:
         logger.error("Bug: Could not decide aa move")
         return None
 
-    logger.info("AA unit %s's goal is %d" % (group.name, correct_goal))
+    logger.debug("AA unit %s's goal is %d" % (group.name, correct_goal))
 
     if group.coalition == "red":
         enemy_coalition = "blue"
@@ -288,7 +288,7 @@ def decide_aa_move(group, game_map):
     if node_is_backtrack[decision] is True:
         extra_info = " (which is backtracking)"
 
-    logger.info("Final decision for aa group %s: move to node %d%s. AA unit currently heading towards node %d." %
+    logger.debug("Final decision for aa group %s: move to node %d%s. AA unit currently heading towards node %d." %
                 (group.name, decision, extra_info, correct_goal))
     if decision is None:
         return None
@@ -330,8 +330,8 @@ def decide_support_move(current_node, coalition, game_map, max_infantry_in_node)
                         # The absolute optimal situation. Target node needs support and is next to us. Choose that.
                         # Note that the original list was shuffled, so we can just take the first instance that we come
                         # across. It's still random.
-                        logger.info("Support unit for %s in node %d is able to make optimal move to node %d" %
-                                    (coalition, int(current_node), int(node_id)))
+                        logger.debug("Support unit for %s in node %d is able to make optimal move to node %d" %
+                                     (coalition, int(current_node), int(node_id)))
                         return int(node_id)
 
             # Ok, we're here, so we found no optimal choices. What about a detour of exactly one node, such that
@@ -369,9 +369,9 @@ def decide_support_move(current_node, coalition, game_map, max_infantry_in_node)
 
                         node_num = int(np.random.choice(options))
 
-                        logger.info("Support unit for %s in node %d is able to make almost optimal move to node %d; "
-                                    "advancing towards goal through support needing detour." %
-                                    (coalition, int(current_node), node_num))
+                        logger.debug("Support unit for %s in node %d is able to make almost optimal move to node %d; "
+                                     "advancing towards goal through support needing detour." %
+                                     (coalition, int(current_node), node_num))
                         return node_num
 
                     # Getting more desperate. Is there any neighbor that needs support AT ALL?
@@ -392,9 +392,9 @@ def decide_support_move(current_node, coalition, game_map, max_infantry_in_node)
                             options.append(neighbor)
                     if len(options) > 0:
                         node_num = int(np.random.choice(options))
-                        logger.info("Support unit for %s in node %d is able to make almost optimal move to node %d; "
-                                    "advancing towards goal through support needing detour." %
-                                    (coalition, int(current_node), node_num))
+                        logger.debug("Support unit for %s in node %d is able to make almost optimal move to node %d; "
+                                     "advancing towards goal through support needing detour." %
+                                     (coalition, int(current_node), node_num))
                         return node_num
 
             # Now we're getting REALLY desperate about this particular distance. Are there any nodes whatsoever at it,
@@ -448,8 +448,8 @@ def decide_support_move(current_node, coalition, game_map, max_infantry_in_node)
 
             # In this one case we are completely deterministic and just take the shortest path to our target node.
             # Remember: The randomness was already involved in CHOOSING the target, so this is still unpredictable.
-            logger.info("Support unit for %s in node %d needs to make a bad move to node %d: Follow shortest path to "
-                        "target" % (coalition, int(current_node), node_num))
+            logger.debug("Support unit for %s in node %d needs to make a bad move to node %d: Follow shortest path to "
+                         "target" % (coalition, int(current_node), node_num))
             return node_num
 
         # If here, we try the next greatest distance from base

@@ -79,6 +79,13 @@ class Group:
         self.destination_node = None
         self.dynamic = dynamic
 
+    def get_type(self):
+        if self.units is None or len(self.units) == 0:
+            return None
+        # Since we know all units have the same type in a group, we use this admittedly somewhat obscure-looking line to
+        # get an arbitrary unit from the dict, and then get its type.
+        return next(iter(self.units.values())).unit_type
+
     def set_destination_node(self, node_id):
         self.destination_node = int(node_id)
 
@@ -743,6 +750,10 @@ class Map:
 
     def find_greatest_threat_node(self, enemy_objective_node_id, enemy_coalition):
         potential_threats = {}
+        if enemy_coalition == "red":
+            this_coalition = "blue"
+        else:
+            this_coalition = "red"
         for node_id in self.groups_in_nodes:
             for group_name in self.groups_in_nodes[int(node_id)]:
                 group = self.groups_in_nodes[int(node_id)][group_name]
@@ -762,7 +773,7 @@ class Map:
             logger.info("No threats at all from the part of %s coalition" % enemy_coalition)
             return -1
 
-        logger.info("Threats from the part of %s coalition: %s" % (enemy_coalition, repr(potential_threats)))
+        logger.debug("Threats from the part of %s coalition: %s" % (enemy_coalition, repr(potential_threats)))
         ordered_threats = []
 
         for node_id in potential_threats:
@@ -770,7 +781,8 @@ class Map:
                                     potential_threats[int(node_id)][1]))
         ordered_threats = sorted(ordered_threats, key=lambda x: (x[2], -x[1]))
         coords = self.get_node_coords(ordered_threats[0][0])
-        logger.info("Greatest threat: node %d, coordinates %f,%f" % (ordered_threats[0][0], coords[0], coords[1]))
+        logger.info("Greatest threat from %s towards %s: node %d, coordinates %f,%f" %
+                    (enemy_coalition, this_coalition, ordered_threats[0][0], coords[0], coords[1]))
         return int(ordered_threats[0][0])
 
     def get_node_extra_multiplier(self, node_id, coalition):
@@ -896,6 +908,58 @@ class Campaign:
         else:
             self.resources_generic = {"red": 0, "blue": 0}
         self.unit_movement_decisions = unit_movement_decisions
+        self.early_battles = set()
+        self.engagements = []
+        self.deaths = []
+        self.group_nodes_mission_start = {}
+
+    # Argument previously_scheduled is a set or list of group_names that have already been moved away from this apparent
+    # node, to halfway point between some two nodes. Hence they will not participate.
+    def get_battles_due_to_same_node(self, previously_scheduled=None):
+        battles = set()
+        if previously_scheduled is None:
+            previously_scheduled = set()
+        elif isinstance(previously_scheduled, list):
+            previously_scheduled = set(previously_scheduled)
+        elif isinstance(previously_scheduled, set) is False:
+            logger.error('"previously_scheduled" to get_battles_due_to_same_node must be set, list or None.')
+            previously_scheduled = set()
+
+        for node_id in self.map.groups_in_nodes:
+            encountered_coalitions = set()
+            potential_group_names = set()
+            for group_name in self.map.groups_in_nodes[node_id]:
+                if group_name in previously_scheduled:
+                    continue
+                group = self.map.groups_in_nodes[node_id][group_name]
+                coalition = group.coalition
+                potential_group_names.add(group_name)
+                if (coalition == "red" or coalition == "blue") and coalition not in encountered_coalitions:
+                    encountered_coalitions.add(group.coalition)
+            if len(encountered_coalitions) > 1:
+                # Contains both coalitions, so now all groups in the node make up a battle. We take potential groups to
+                # actual groups
+                battle = Battle(nodes={node_id})
+                battle.add_group_names(potential_group_names)
+                battles.add(battle)
+        return battles
+
+    def add_battle_to_battles(self, battle):
+        if isinstance(battle, Battle):
+            self.early_battles.add(battle)
+        else:
+            logger.error("The argument \"battle\" to add_battle_to_battles must be Battle-object.")
+
+    def add_to_battles(self, nodes, group_name):
+
+        found = False
+        for battle in self.early_battles:
+            if battle.nodes == nodes:
+                battle.add_group_name(group_name)
+                found = True
+                break
+        if found is False:
+            self.early_battles.add(Battle(nodes=nodes, group_names={group_name}))
 
     def add_resources_generic(self, coalition, number):
         if coalition != "red" and coalition != "blue":
@@ -1036,3 +1100,36 @@ class Campaign:
                 "resources_generic": self.resources_generic, "unit_movement_decisions": self.unit_movement_decisions,
                 "aa_unit_id_counter": self.aa_unit_id_counter, "allowed_aa_units": self.allowed_aa_units,
                 "extra_scores": self.extra_scores, "software_version": self.software_version}
+
+
+class Battle:
+    def __init__(self, nodes=None, group_names=None):
+        if nodes is None:
+            self.nodes = set()
+        elif isinstance(nodes, set) is False:
+            logger.error("The argument \"nodes\" to the class Battle contructor must be None or a set.")
+            self.nodes = set()
+        else:
+            self.nodes = nodes
+        if group_names is None:
+            self.group_names = set()
+        elif isinstance(group_names, set) is False:
+            logger.error("The argument \"group_names\" to the class Battle contructor must be None or a set.")
+            self.group_names = set()
+        else:
+            self.group_names = group_names
+
+    def __repr__(self):
+        return "Battle(Nodes=%s, groups=%s)" % (repr(self.nodes), repr(self.group_names))
+
+    def add_group_name(self, group_name):
+        if group_name not in self.group_names:
+            self.group_names.add(group_name)
+
+    def add_group_names(self, group_names):
+        if isinstance(group_names, list):
+            self.group_names = self.group_names | set(group_names)
+        elif isinstance(group_names, set):
+            self.group_names = self.group_names | group_names
+        else:
+            logger.error("The argument \"group_names\" to add_group_names in Battle must be a set or list.")

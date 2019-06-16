@@ -113,6 +113,9 @@ class DyncCFrame(wx.Frame):
         self.bg_vis_menuitem = file_menu.Append(-1, "Background &visible\tCtrl-V", "Background image visible",
                                                 kind=wx.ITEM_CHECK)
         img_item = file_menu.Append(-1, "&Save png\tCtrl-S", "Save the current map as .png")
+
+        stat_item = file_menu.Append(-1, "Save statistics &text\tCtrl-T",
+                                     "Save the battle statistics as human-readable text")
         resetcampaign_item = file_menu.Append(-1, "&Reset campaign\tCtrl-R", "Reset the current campaign")
         file_menu.AppendSeparator()
         # When using a stock ID we don't need to specify the menu item's
@@ -143,6 +146,7 @@ class DyncCFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.on_background_visible, self.bg_vis_menuitem)
         self.bg_vis_menuitem.Check()
         self.Bind(wx.EVT_MENU, self.on_save, img_item)
+        self.Bind(wx.EVT_MENU, self.on_save_statistics, stat_item)
         self.Bind(wx.EVT_MENU, self.on_reset_campaign, resetcampaign_item)
         self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
         self.Bind(wx.EVT_MENU, DyncCFrame.on_about, about_item)
@@ -160,6 +164,9 @@ class DyncCFrame(wx.Frame):
 
     def on_save(self, _):
         self.server.save_image()
+
+    def on_save_statistics(self, _):
+        self.server.save_statistics_text_file()
 
     def on_reset_campaign(self, _):
         self.server.reset_campaign()

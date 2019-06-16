@@ -518,6 +518,7 @@ do
 	local fly_commands = {}
 	local delayed_routes = {}
 	local scored_planes = {}
+	local groups_shot_by_group = {}
 	server = json.rpc.proxy(dync_socket)
 
 
@@ -722,12 +723,14 @@ do
 
 
 
-	function handle_event(event)
-		env.info(string.format("Event code %d happened", event.id), false)
+	function handle_event(event)		
 		if event.id == world.event.S_EVENT_MISSION_END then
-
+			env.info(string.format("Mission ends at %f", timer.getAbsTime()), false)
 			local param = {}
 			param["positions"] = {}
+			param["shot"] = groups_shot_by_group
+			param["time"] = timer.getAbsTime()
+			param["starttime"] = timer.getTime0()
 
 			for k,v in pairs(live_units) do
 
@@ -743,7 +746,7 @@ do
 						-- Somehow we didn't get EVENT_DEAD for this unit. We report it destroyed now.
 
 						env.info("Reported destroyed unit at mission end: "..v["unitname"]..", group: "..v["groupname"], false)
-						local result, error = server.unitdestroyed({v["unitname"], v["groupname"]})
+						local result, error = server.unitdestroyed({v["unitname"], v["groupname"], timer.getAbsTime()})
 					end
 				end
 			end
@@ -757,7 +760,55 @@ do
 				if resultobj["event"] == "end" then
 					env.info(string.format("Campaign ended: %s", resultobj["result"]), true)
 				end
+			end			
+		elseif event.id == world.event.S_EVENT_HIT then
+		
+			if Object.getCategory(event.target) ~= 1 then
+				-- target wasn't a unit, so we are not interested
+				return
 			end
+			if event.initiator == nil then
+				-- Don't know exactly what causes this (it does happen), but getting hit by no identifiable unit is of no interest to us.
+				return
+			end
+			local unitshooter = event.initiator
+			local unitshootername = unitshooter:getName()
+			local unitshooteename = event.target:getName()
+			local unitshootee = Unit.getByName(unitshooteename)
+			local shotgroupname = Unit.getGroup(unitshootee):getName()
+			
+			if string.find(shotgroupname, "__in__") then
+				-- Infantry is merely symbolic. We don't care about it.
+				return
+			end
+			
+			if mist.DBs.unitsByName[unitshooteename]["category"] == "plane" then
+				-- Shot planes don't interest us at this point
+				return
+			end
+			
+			local was_plane = false
+			
+			if mist.DBs.unitsByName[unitshootername]["category"] == "plane" then
+				was_plane = true
+			end	
+			
+			local shootinggroupname = unitshooter:getGroup():getName()
+			if groups_shot_by_group[shotgroupname] == nil then
+				-- We create a 2D table, of the form shot:shooter:was_plane where shot and shooter are group names
+				groups_shot_by_group[shotgroupname] = {}				
+			end
+			
+			-- First check if this already exists, and if yes, return
+			for k, v in pairs(groups_shot_by_group[shotgroupname]) do
+				if k == shootinggroupname then
+					return
+				end				
+			end
+			
+			-- Didn't exist. create entry.
+			groups_shot_by_group[shotgroupname][shootinggroupname] = {was_plane, timer.getAbsTime( )}
+			
 		elseif event.id == world.event.S_EVENT_DEAD or event.id == world.event.S_EVENT_PILOT_DEAD or
 				event.id == world.event.S_EVENT_CRASH or event.id == world.event.S_EVENT_EJECTION then
 				
@@ -885,7 +936,7 @@ do
 							return
 						end
 						
-						local result, error = server.unitdestroyed({name, groupname})
+						local result, error = server.unitdestroyed({name, groupname, timer.getAbsTime()})
 						env.info("Reported destroyed unit: "..name..", group: "..groupname, false)
 						live_units[k] = nil
 						found_it = true

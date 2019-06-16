@@ -8,6 +8,8 @@ from threading import Thread
 from configparser import ConfigParser
 from pathlib import Path
 import socket
+import sqlite3
+import datetime
 
 from ai import *
 from classes import *
@@ -56,7 +58,7 @@ class DynCServer:
         'AI_EJECT_SCORE = 5.0\n' \
         'AI_DEATH_SCORE = 10.0\n'
 
-    def __init__(self, campaign_json, conf_file, mapbg):
+    def __init__(self, campaign_json, conf_file, mapbg, sqlite_path, stat_txt_path):
         self.logger = logging.getLogger('general')
         self.logger.setLevel(logging.DEBUG)
         self.log_file_handler = None
@@ -89,6 +91,24 @@ class DynCServer:
                 f.write(DynCServer.cfg_default_content)
         self.init_campaign()
         self.read_config(self.conf_file)
+        self.sqlite_path = sqlite_path
+        self.stat_txt_path = stat_txt_path
+
+        if os.path.isfile(sqlite_path) is False:
+            conn = sqlite3.connect(self.sqlite_path)
+            self.init_sqlite(conn)
+            conn.close()
+
+    @staticmethod
+    def init_sqlite(conn):
+        c = conn.cursor()
+
+        c.execute('CREATE TABLE statistics (conflicts text, mission_time integer)')
+        c.execute('CREATE TABLE unit_types (name text, id integer)')
+
+        for type_name in constants.unit_type_to_id:
+            c.execute("INSERT INTO unit_types VALUES ('%s',%d)" % (type_name, constants.unit_type_to_id[type_name]))
+        conn.commit()
 
     def init_campaign(self):
         if os.path.isfile(self.campaign_json) is False:
@@ -352,7 +372,7 @@ class DynCServer:
             self.logger.warning("Failed to delete campaign file %s" % self.campaign_json, exc_info=True)
         self.campaign = None
 
-    def missionend(self, _):
+    def missionend(self, param):
         # noinspection PyBroadException
         try:
             if self.campaign is None:
@@ -361,6 +381,205 @@ class DynCServer:
             groups = self.campaign.map.groups()
             victory_red = False
             victory_blue = False
+
+            obj = json.loads(param)
+            shot_groups = obj["shot"]
+            mission_time = obj["time"]
+            start_time = obj["starttime"]
+
+            times_group_died = {}
+            groups_handled = []
+            for death in self.campaign.deaths:
+                group_name = death["groupname"]
+                if group_name in groups_handled:
+                    continue
+                if self.campaign.map.find_group_by_name(group_name) is None:
+                    # This group completely disappeared this mission
+
+                    # We initialize this to the death of this unit. There may be a later death of the same group, and if
+                    # there is, this variable will increase to that time, until we have found the latest death.
+                    latest_death_time = death["time"]
+
+                    # So that we don't need to bother with this group again on any further iterations of the outer loop
+                    groups_handled.append(group_name)
+
+                    # This may be a bit inefficient way to find the last death for this group, but since the list is
+                    # always tiny, there is no point in making it more efficient.
+                    for death2 in self.campaign.deaths:
+                        if death2["groupname"] == group_name and death2["time"] > latest_death_time:
+                            latest_death_time = death2["time"]
+                    times_group_died[group_name] = {"time": latest_death_time, "type": death["type"]}
+
+            # Now we know for every group that disappeared on this mission, what time the last unit was killed. Key is
+            # group name, value is the time.
+
+            battles_earliest_external_engagement = []
+            battle_end_times = []
+
+            self.logger.debug("Starting to clean up the battles for statistics.")
+
+            for battle in self.campaign.early_battles:
+
+                # We have SOME hope of getting good data, even if a ground unit has engaged before its time.
+                earliest_external_engagement = None
+
+                # Planes make the data even harder to clean up than engagement from ground units that we expected to
+                # engage at some point. Basically we throw out all data after a plane has engaged. But not before.
+                earliest_plane_engagement_time = None
+
+                for group_name in shot_groups:
+                    if group_name not in battle.group_names:
+                        # This is the group shot at. If it's not part of this battle, we are not interested.
+                        continue
+                    # If here, a group in this battle was shot.
+                    shooters = shot_groups[group_name]
+
+                    for shooter_name in shooters:
+                        was_plane = shooters[shooter_name][0]
+                        time = shooters[shooter_name][1]
+
+                        if was_plane:
+                            if earliest_external_engagement is None or earliest_external_engagement > time:
+                                self.logger.debug("Shooter is a plane, earliest external engagement is now %f" % time)
+                                earliest_external_engagement = time
+                            if earliest_plane_engagement_time is None or earliest_plane_engagement_time > time:
+                                earliest_plane_engagement_time = time
+                            continue
+                        elif shooter_name not in self.campaign.group_nodes_mission_start:
+                            self.logger.error("BUG! group_nodes_mission_start not populated correctly.")
+                            continue
+                        shooter_node_id = self.campaign.group_nodes_mission_start[shooter_name]["node"]
+                        if shooter_node_id not in battle.nodes:
+                            if earliest_external_engagement is None or earliest_external_engagement > time:
+                                self.logger.debug("Ground unit shooter %s in node %d; it is not in battle nodes %s. " 
+                                                  "Earliest external engagement is now %f" %
+                                                  (shooter_name, shooter_node_id, repr(battle.nodes), time))
+                                earliest_external_engagement = time
+
+                if earliest_external_engagement is not None:
+                    battles_earliest_external_engagement.append((battle, earliest_external_engagement,
+                                                                 earliest_plane_engagement_time))
+
+                    if earliest_plane_engagement_time is None:
+                        extra_info = " It was a ground unit."
+                    else:
+                        extra_info = " It was a plane (but possibly also ground unit)."
+
+                    self.logger.info("We have identified a battle with external participation.%s" % extra_info)
+                else:
+                    battle_end_times.append((battle, None))
+
+            self.logger.debug("Now searching for more clean battles from those with external engagement that came "
+                              "AFTER the battle")
+            for battle_data in battles_earliest_external_engagement:
+
+                # We first initialize this with all the groups of this engagement, with the value being their coalition.
+                # Ultimately we want to find out if both coalitions still remain in the end in this node. If they do,
+                # AND the engagement was in the list of battles with external engagement, this data is hopelessly dirty
+                # and we discard it. Whenever we encounter a killed group in our other list, we remove it from this one.
+                # We also keep track of the latest recorded death for both coalitions. What we hope to ultimately find,
+                # is that one coalition was entirely wiped out, AND the latest death for that coalition was earlier than
+                # the earliest external engagement. For example, if red wipes out blue first, and then later a blue
+                # plane arrives to shoot at red, it doesn't matter with regards to what we have learned about the
+                # relative strengths of the initial battle. We can then move that battle into our "clean" list.
+                remaining_groups = {}
+                latest_death_red = None
+                latest_death_blue = None
+
+                for group_name in self.campaign.group_nodes_mission_start:
+                    if group_name in battle_data[0].group_names:
+                        # This group name belongs in our battle. We place it in our list of remaining groups, thereby
+                        # initializing it to all groups of this battle. along with their coalitions.
+                        group_data = self.campaign.group_nodes_mission_start[group_name]
+                        coalition = group_data["coalition"]
+                        remaining_groups[group_name] = coalition
+
+                # Now remaining_groups has been filled, and we can start deleting from it.
+
+                for group_name in battle_data[0].group_names:
+                    # We go through all the group names belonging to this battle
+                    coalition = self.campaign.group_nodes_mission_start[group_name]["coalition"]
+                    if group_name in times_group_died:
+                        # Now things get interesting: This group has died at some point.
+                        if coalition == "red":
+                            if latest_death_red is None or latest_death_red < times_group_died[group_name]["time"]:
+                                # And that time of death is the latest death for red coalition that we have yet seen.
+                                # In the end, we will find the absolute last death.
+                                latest_death_red = times_group_died[group_name]["time"]
+                        else:
+                            if latest_death_blue is None or latest_death_blue < times_group_died[group_name]["time"]:
+                                # Same for blue
+                                latest_death_blue = times_group_died[group_name]["time"]
+                        # And no matter the coalition, we remove this group from our remaining groups, hoping to
+                        # ultimately find just one coalition alive.
+                        del(remaining_groups[group_name])
+
+                # Now all group deaths have been handled, and remaining_groups contains only the surviving groups.
+                found_red = False
+                found_blue = False
+
+                for group_name in remaining_groups:
+                    if remaining_groups[group_name] == "red":
+                        found_red = True
+                    else:
+                        found_blue = True
+                if found_red and found_blue:
+                    # This battle did not conclude at all; both coalitions remain. Move on to next battle.
+                    self.logger.debug("this battle with external engagement did not conclude, and hence is not clean")
+                    continue
+                # If here, we still need to check the times.
+
+                # If either coalition no longer exists in this battle, and it initially did (which we know from its
+                # precense in the outer loop, that is a sufficient condition for a clean battle. We simply check if it
+                # disappeared earlier than the earliest external engagement in this battle. It is sufficient for this
+                # to be true for either coalition.
+                was_clean = False
+                if found_red is False and latest_death_red is not None and latest_death_red < battle_data[1]:
+                    self.logger.debug("This battle was clean; red died: latest death: %s, earliest engagement %s" %
+                                      (repr(latest_death_red), battle_data[1]))
+                    battle_end_times.append((battle_data[0], latest_death_red))
+                    was_clean = True
+                elif found_blue is False and latest_death_blue is not None and latest_death_blue < battle_data[1]:
+                    self.logger.debug("This battle was clean; blue died: latest death: %s, earliest engagement %s" %
+                                      (repr(latest_death_blue), battle_data[1]))
+                    battle_end_times.append((battle_data[0], latest_death_blue))
+                    was_clean = True
+                if was_clean:
+                    self.logger.info("We have determined that external participation did not affect the battle.")
+
+            statistics = []
+
+            for battle_data in battle_end_times:
+
+                # Index 0 is the Battle object, and index 1 is the time this battle ended, or None if we don't have to
+                # consider the time because the participants were never attacked by external forces
+
+                # We have now created an updated list of clean battles. Now it's time to actually use the data.
+                initial = {"red": [], "blue": []}
+                final = {"red": [], "blue": []}
+                for group_name in self.campaign.group_nodes_mission_start:
+                    if group_name in battle_data[0].group_names:
+                        # This group name belongs in our battle. We place it in our list of remaining groups, thereby
+                        # initializing it to all groups of this battle. along with their coalitions.
+                        group_data = self.campaign.group_nodes_mission_start[group_name]
+                        coalition = group_data["coalition"]
+                        initial[coalition].append(group_data["type"])
+
+                        if group_name in times_group_died:
+
+                            if battle_data[1] is None or times_group_died[group_name]["time"] <= battle_data[1]:
+                                # This group is genuinely dead. Don't add it.
+                                pass
+                            else:
+                                self.logger.debug("Group %s died after battle done; is a clean battle." % group_name)
+                                # If here, the group died some time after the end of the first battle. We therefore
+                                # consider it a survivor, as far as the first battle goes.
+                                final[coalition].append(group_data["type"])
+                        else:
+                            # If here, group didn't die at all
+                            final[coalition].append(group_data["type"])
+                statistics.append({"initial_types": initial, "surviving_types": final})
+            self.save_statistics(statistics=statistics, mission_time=(mission_time - start_time))
 
             if len(groups) == 0:
                 self.logger.info("Draw: All units destroyed!")
@@ -379,8 +598,8 @@ class DynCServer:
                         self.campaign.map.get_shortest_path(node_id,
                                                             self.campaign.map.get_coalition_goal(group.coalition))
 
-                    self.logger.info("Group %s is now at node %d and shortest path is %s" %
-                                     (group_name, node_id, repr(shortest_path)))
+                    self.logger.debug("Group %s is now at node %d and shortest path is %s" %
+                                      (group_name, node_id, repr(shortest_path)))
 
                     if group.coalition == "red":
                         enemy_coalition = "blue"
@@ -430,6 +649,146 @@ class DynCServer:
             self.logger.exception("Exception in missionend", exc_info=True)
             return '{"code": "1", "error": "Internal Server Error. See server logs for more information."}'
 
+    def save_statistics(self, statistics, mission_time):
+        if len(statistics) == 0:
+            return
+        mission_time = int(mission_time)
+        conflicts = []
+        for statistic in statistics:
+            start_red_list = []
+            start_blue_list = []
+            end_red_list = []
+            end_blue_list = []
+            for unit_type in statistic["initial_types"]["red"]:
+                if unit_type in constants.unit_type_to_id:
+                    start_red_list.append(constants.unit_type_to_id[unit_type])
+                else:
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
+            for unit_type in statistic["initial_types"]["blue"]:
+                if unit_type in constants.unit_type_to_id:
+                    start_blue_list.append(constants.unit_type_to_id[unit_type])
+                else:
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
+            for unit_type in statistic["surviving_types"]["red"]:
+                if unit_type in constants.unit_type_to_id:
+                    end_red_list.append(constants.unit_type_to_id[unit_type])
+                else:
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
+            for unit_type in statistic["surviving_types"]["blue"]:
+                if unit_type in constants.unit_type_to_id:
+                    end_blue_list.append(constants.unit_type_to_id[unit_type])
+                else:
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
+
+            conflicts.append({"sr": start_red_list, "sb": start_blue_list, "er": end_red_list, "eb": end_blue_list})
+
+        conn = sqlite3.connect(self.sqlite_path)
+        conflicts_str = json.dumps(conflicts)
+        sql = 'INSERT INTO statistics (conflicts, mission_time) VALUES (?,?)'
+        c = conn.cursor()
+        c.execute(sql, (conflicts_str, mission_time))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def get_type_string_from_int(sought_key):
+        for key, value in constants.unit_type_to_id.items():
+            if sought_key == value:
+                return key
+        return None
+
+    def save_statistics_text_file(self):
+        if os.path.isfile(self.stat_txt_path) is True:
+            os.remove(self.stat_txt_path)
+        conn = sqlite3.connect(self.sqlite_path)
+        c = conn.cursor()
+        c.execute("SELECT conflicts, mission_time FROM statistics")
+        rows = c.fetchall()
+
+        with open(self.stat_txt_path, 'w') as f:
+            for row in rows:
+                f.write("---Mission lasted %s---\n" % str(datetime.timedelta(seconds=row[1])))
+                # print(row[0])
+                battles = json.loads(row[0])
+                for battle in battles:
+                    red_units_start = {}
+                    blue_units_start = {}
+                    red_units_end = {}
+                    blue_units_end = {}
+
+                    for unit_type in battle["sr"]:
+                        if unit_type not in red_units_start:
+                            red_units_start[unit_type] = 1
+                        else:
+                            red_units_start[unit_type] += 1
+                    for unit_type in battle["sb"]:
+                        if unit_type not in blue_units_start:
+                            blue_units_start[unit_type] = 1
+                        else:
+                            blue_units_start[unit_type] += 1
+                    for unit_type in battle["er"]:
+                        if unit_type not in red_units_end:
+                            red_units_end[unit_type] = 1
+                        else:
+                            red_units_end[unit_type] += 1
+                    for unit_type in battle["eb"]:
+                        if unit_type not in blue_units_end:
+                            blue_units_end[unit_type] = 1
+                        else:
+                            blue_units_end[unit_type] += 1
+                    red_units_start_str = ""
+                    blue_units_start_str = ""
+                    red_units_end_str = ""
+                    blue_units_end_str = ""
+                    for unit_type in red_units_start:
+                        num = red_units_start[unit_type]
+                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                        if num == 1:
+                            red_units_start_str += "%s, " % type_str
+                        else:
+                            red_units_start_str += "%dX %s, " % (num, type_str)
+                    for unit_type in blue_units_start:
+                        num = blue_units_start[unit_type]
+                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                        if num == 1:
+                            blue_units_start_str += "%s, " % type_str
+                        else:
+                            blue_units_start_str += "%dX %s, " % (num, type_str)
+                    for unit_type in red_units_end:
+                        num = red_units_end[unit_type]
+                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                        if num == 1:
+                            red_units_end_str += "%s, " % type_str
+                        else:
+                            red_units_end_str += "%dX %s, " % (num, type_str)
+                    for unit_type in blue_units_end:
+                        num = blue_units_end[unit_type]
+                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                        if num == 1:
+                            blue_units_end_str += "%s, " % type_str
+                        else:
+                            blue_units_end_str += "%dX %s, " % (num, type_str)
+                    if len(red_units_start_str) == 0:
+                        red_units_start_str = "(NONE)"
+                    else:
+                        red_units_start_str = red_units_start_str[:-2]
+                    if len(blue_units_start_str) == 0:
+                        blue_units_start_str = "(NONE)"
+                    else:
+                        blue_units_start_str = blue_units_start_str[:-2]
+                    if len(red_units_end_str) == 0:
+                        red_units_end_str = "(NONE)"
+                    else:
+                        red_units_end_str = red_units_end_str[:-2]
+                    if len(blue_units_end_str) == 0:
+                        blue_units_end_str = "(NONE)"
+                    else:
+                        blue_units_end_str = blue_units_end_str[:-2]
+                    f.write("ON BATTLE START: Red: %s --- Blue: %s\n" % (red_units_start_str, blue_units_start_str))
+                    f.write("ON BATTLE END:   Red: %s --- Blue: %s\n" % (red_units_end_str, blue_units_end_str))
+                f.write("\n")
+        conn.close()
+
     def post_message_if_necessary(self, message):
         if self.messages_user is not None:
             MessageService.hook_post_message(username=self.messages_user, url=self.messages_url,
@@ -474,7 +833,7 @@ class DynCServer:
         self.logger.info("--Changed score: red %s, blue %s--" % (repr(scores[0]), repr(scores[1])))
         self.window.update_score(scores)
 
-    def unitdestroyed(self, unitname, groupname):
+    def unitdestroyed(self, unitname, groupname, time):
 
         # noinspection PyBroadException
         try:
@@ -487,6 +846,9 @@ class DynCServer:
 
             if unitname not in self.campaign.destroyed_unit_names_and_groups:
                 self.campaign.destroyed_unit_names_and_groups[unitname] = {"group": groupname}
+
+            self.campaign.deaths.append({"time": time, "unitname": unitname, "groupname": groupname,
+                                         "type": group.get_type()})
 
             for dict_unit_name in group.units:
                 if dict_unit_name == unitname:
@@ -687,6 +1049,13 @@ class DynCServer:
                     coords = self.campaign.map.get_node_coords(node)
                     groups_pos[group_name] = "%f,%f" % (coords[0], coords[1])
 
+            # These are temporary lists that only hold information from beginning of mission to end of mission. They are
+            # never saved to the campaign.json
+            self.campaign.early_battles.clear()
+            self.campaign.engagements.clear()
+            self.campaign.deaths.clear()
+            self.campaign.group_nodes_mission_start.clear()
+
             # list of dicts of the format:
             # [{ node_id: group_name, node_id: group_name}, {node_id: group_name, node_id: group_name}, ...]
 
@@ -779,6 +1148,20 @@ class DynCServer:
             # coordinates, and that's when we correct our group's node.
             self.campaign.map.update_group_nodes()
 
+            # At mission end, some groups will have disappeared and we can no longer find out where they were. So, we
+            # save this information now, to a temporary dictionary that is not saved to json.
+            for group_name in self.campaign.map.groups():
+                group = self.campaign.map.find_group_by_name(group_name)
+                if group.category != "vehicle":
+                    continue
+                self.campaign.group_nodes_mission_start[group_name] = \
+                    {"node": int(self.campaign.map.find_group_node(group)), "coalition": group.coalition,
+                     "type": group.get_type()}
+
+            # Group names that we move to a halfway point of a segment, and hence do not participate in figuring out
+            # the groups that battle due to being in the same node.
+            previously_scheduled_group_names = set()
+
             for battle in actual_battles:
                 group1 = self.campaign.map.find_group_by_name(battle[0])
                 group2 = self.campaign.map.find_group_by_name(battle[1])
@@ -800,6 +1183,23 @@ class DynCServer:
                     groups_pos[group1.name] = "%f,%f" % (euclidcenter.x, euclidcenter.y)
                 if group2.dynamic is False:
                     groups_pos[group2.name] = "%f,%f" % (euclidcenter.x, euclidcenter.y)
+
+                # Nodes and group names are internally represented as sets, so order doesn't matter. If these same two
+                # nodes end up added in the opposite order later, they are interpreted as the same pair.
+                # Note: "nodes" can be just a set of one. That means that the opposing forces start in the same node. A
+                # set of two is a "scheduled battle" at the mid-point. There are never more than two nodes.
+                self.campaign.add_to_battles(nodes={node1, node2}, group_name=battle[0])
+                self.campaign.add_to_battles(nodes={node1, node2}, group_name=battle[1])
+                previously_scheduled_group_names.add(battle[0])
+                previously_scheduled_group_names.add(battle[1])
+
+            battles_same_node = \
+                self.campaign.get_battles_due_to_same_node(previously_scheduled=previously_scheduled_group_names)
+
+            for battle in battles_same_node:
+                self.campaign.add_battle_to_battles(battle)
+
+            # print("__eb: %s" % repr(self.campaign.early_battles))
 
             # Positions done, if this was not stage 0. In all stages, also decide destinations.
             # Do not make decisions for aa-groups yet, that will happen in a loop after this.
@@ -1068,7 +1468,9 @@ def main():
 
     server_obj = DynCServer(campaign_json=os.path.join(user_directory, "campaign.json"),
                             conf_file=os.path.join(user_directory, "setup.cfg"),
-                            mapbg=os.path.join(user_directory, "map-bg.dat"))
+                            mapbg=os.path.join(user_directory, "map-bg.dat"),
+                            sqlite_path=os.path.join(user_directory, "statistics.db"),
+                            stat_txt_path=os.path.join(user_directory, "statistics.txt"))
     server_thread = ServerThread()
     server_thread.daemon = True
     app = wx.App()
