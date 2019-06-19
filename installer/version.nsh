@@ -1,1 +1,1 @@
-!define VERSION 0.1.8.1
+!define VERSION 0.1.8.2

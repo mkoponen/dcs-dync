@@ -372,6 +372,19 @@ class DynCServer:
             self.logger.warning("Failed to delete campaign file %s" % self.campaign_json, exc_info=True)
         self.campaign = None
 
+    @staticmethod
+    def skill_string_to_statistics_num(skill_str):
+        num = -1
+        if skill_str == "Average":
+            num = 0
+        elif skill_str == "Good":
+            num = 1
+        elif skill_str == "High":
+            num = 2
+        elif skill_str == "Excellent":
+            num = 3
+        return num
+
     def missionend(self, param):
         # noinspection PyBroadException
         try:
@@ -445,10 +458,10 @@ class DynCServer:
                             if earliest_plane_engagement_time is None or earliest_plane_engagement_time > time:
                                 earliest_plane_engagement_time = time
                             continue
-                        elif shooter_name not in self.campaign.group_nodes_mission_start:
-                            self.logger.error("BUG! group_nodes_mission_start not populated correctly.")
+                        elif shooter_name not in self.campaign.group_data_mission_start:
+                            self.logger.error("BUG! group_data_mission_start not populated correctly.")
                             continue
-                        shooter_node_id = self.campaign.group_nodes_mission_start[shooter_name]["node"]
+                        shooter_node_id = self.campaign.group_data_mission_start[shooter_name]["node"]
                         if shooter_node_id not in battle.nodes:
                             if earliest_external_engagement is None or earliest_external_engagement > time:
                                 self.logger.debug("Ground unit shooter %s in node %d; it is not in battle nodes %s. " 
@@ -486,19 +499,18 @@ class DynCServer:
                 latest_death_red = None
                 latest_death_blue = None
 
-                for group_name in self.campaign.group_nodes_mission_start:
-                    if group_name in battle_data[0].group_names:
-                        # This group name belongs in our battle. We place it in our list of remaining groups, thereby
-                        # initializing it to all groups of this battle. along with their coalitions.
-                        group_data = self.campaign.group_nodes_mission_start[group_name]
-                        coalition = group_data["coalition"]
-                        remaining_groups[group_name] = coalition
+                for group_name in battle_data[0].group_names:
+                    # This group name belongs in our battle. We place it in our list of remaining groups, thereby
+                    # initializing it to all groups of this battle. along with their coalitions.
+                    group_data = self.campaign.group_data_mission_start[group_name]
+                    coalition = group_data["coalition"]
+                    remaining_groups[group_name] = coalition
 
                 # Now remaining_groups has been filled, and we can start deleting from it.
 
                 for group_name in battle_data[0].group_names:
                     # We go through all the group names belonging to this battle
-                    coalition = self.campaign.group_nodes_mission_start[group_name]["coalition"]
+                    coalition = self.campaign.group_data_mission_start[group_name]["coalition"]
                     if group_name in times_group_died:
                         # Now things get interesting: This group has died at some point.
                         if coalition == "red":
@@ -552,33 +564,78 @@ class DynCServer:
             for battle_data in battle_end_times:
 
                 # Index 0 is the Battle object, and index 1 is the time this battle ended, or None if we don't have to
-                # consider the time because the participants were never attacked by external forces
+                # consider the time because the participants were never attacked by external forces.
+
+                # Note: We have to keep track of how many units the winning groups had at the time the battle ended,
+                # which is not necessarily the same number as in mission end. For that, you have to keep track of the
+                # different combinations of what might have happened. They are commented in the code in the different
+                # if-else blocks. There are four possible combinations, and in one of them the group is empty so we
+                # don't add anything.
 
                 # We have now created an updated list of clean battles. Now it's time to actually use the data.
                 initial = {"red": [], "blue": []}
                 final = {"red": [], "blue": []}
-                for group_name in self.campaign.group_nodes_mission_start:
-                    if group_name in battle_data[0].group_names:
-                        # This group name belongs in our battle. We place it in our list of remaining groups, thereby
-                        # initializing it to all groups of this battle. along with their coalitions.
-                        group_data = self.campaign.group_nodes_mission_start[group_name]
-                        coalition = group_data["coalition"]
-                        initial[coalition].append(group_data["type"])
+                for group_name in battle_data[0].group_names:
+                    # This group name belongs in our battle. We place it in our list of remaining groups, thereby
+                    # initializing it to all groups of this battle. along with their coalitions.
+                    group_data = self.campaign.group_data_mission_start[group_name]
+                    coalition = group_data["coalition"]
+                    skill_dict = group_data["skills"]
 
-                        if group_name in times_group_died:
+                    for skill_entry in skill_dict:
+                        num_skill = skill_dict[skill_entry]
+                        initial[coalition].append([group_data["type"], num_skill])
 
-                            if battle_data[1] is None or times_group_died[group_name]["time"] <= battle_data[1]:
-                                # This group is genuinely dead. Don't add it.
-                                pass
-                            else:
-                                self.logger.debug("Group %s died after battle done; is a clean battle." % group_name)
-                                # If here, the group died some time after the end of the first battle. We therefore
-                                # consider it a survivor, as far as the first battle goes.
-                                final[coalition].append(group_data["type"])
+                    if group_name in times_group_died:
+
+                        if battle_data[1] is None or times_group_died[group_name]["time"] <= battle_data[1]:
+                            # This group is genuinely dead. Don't add it. Note how this is where we don't have to deal
+                            # with the number of units. The group died first, so it's 0.
+                            pass
                         else:
-                            # If here, group didn't die at all
-                            final[coalition].append(group_data["type"])
-                statistics.append({"initial_types": initial, "surviving_types": final})
+                            self.logger.debug("Group %s died after battle done; is a clean battle." % group_name)
+                            # If here, the group died some time after the end of the first battle. We therefore
+                            # consider it a survivor, as far as the first battle goes.
+
+                            # But now things get more complicated. We have to find out the times of deaths from our
+                            # list to know how many units there were at battle end.
+
+                            # Initialize to the unit list and their skills at start of mission
+                            units_survived_at_end = skill_dict.copy()
+
+                            # Then delete for every death in this group, such that happened no later than battle end
+                            for death in self.campaign.deaths:
+                                if death["groupname"] == group_name and death["time"] <= battle_data[1] and \
+                                   death["unitname"] in units_survived_at_end:
+                                    del units_survived_at_end[death["unitname"]]
+                            for unit_key in units_survived_at_end:
+                                final[coalition].append([group_data["type"], units_survived_at_end[unit_key]])
+                    else:
+                        if battle_data[1] is None:
+                            units_survived_at_end = skill_dict.copy()
+                            for death in self.campaign.deaths:
+                                # Note how there is no condition regarding battle_data[1] (which is None) because all
+                                # deaths are relevant; all deaths came from this battle. That's precisely WHY it's None
+                                if death["groupname"] == group_name and death["unitname"] in units_survived_at_end:
+                                    del units_survived_at_end[death["unitname"]]
+                            for unit_key in units_survived_at_end:
+                                final[coalition].append([group_data["type"], units_survived_at_end[unit_key]])
+                        else:
+                            # Some units may have died later, since battle_data[1] is not none which means external
+                            # engagement. We have to check the times of deaths from our list.
+
+                            # Initialize to the unit list and their skills at start of mission
+                            units_survived_at_end = skill_dict.copy()
+
+                            # Then delete for every death in this group, such that happened no later than battle end
+                            for death in self.campaign.deaths:
+                                if death["groupname"] == group_name and death["time"] <= battle_data[1] and \
+                                   death["unitname"] in units_survived_at_end:
+                                    del units_survived_at_end[death["unitname"]]
+                            for unit_key in units_survived_at_end:
+                                final[coalition].append([group_data["type"], units_survived_at_end[unit_key]])
+                statistics.append({"initial_types_and_skills": initial, "surviving_types_and_skills": final})
+
             self.save_statistics(statistics=statistics, mission_time=(mission_time - start_time))
 
             if len(groups) == 0:
@@ -659,31 +716,47 @@ class DynCServer:
             start_blue_list = []
             end_red_list = []
             end_blue_list = []
-            for unit_type in statistic["initial_types"]["red"]:
-                if unit_type in constants.unit_type_to_id:
-                    start_red_list.append(constants.unit_type_to_id[unit_type])
+
+            for unit_type_and_skill in statistic["initial_types_and_skills"]["red"]:
+                if unit_type_and_skill[1] < 0:
+                    self.logger.warning("We found an unrecognized skill level in statistics. Skipping this entry.")
+                    continue
+                if unit_type_and_skill[0] in constants.unit_type_to_id:
+                    start_red_list.append([constants.unit_type_to_id[unit_type_and_skill[0]], unit_type_and_skill[1]])
                 else:
-                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
-            for unit_type in statistic["initial_types"]["blue"]:
-                if unit_type in constants.unit_type_to_id:
-                    start_blue_list.append(constants.unit_type_to_id[unit_type])
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type_and_skill[0])
+            for unit_type_and_skill in statistic["initial_types_and_skills"]["blue"]:
+                if unit_type_and_skill[1] < 0:
+                    self.logger.warning("We found an unrecognized skill level in statistics. Skipping this entry.")
+                    continue
+                if unit_type_and_skill[0] in constants.unit_type_to_id:
+                    start_blue_list.append([constants.unit_type_to_id[unit_type_and_skill[0]], unit_type_and_skill[1]])
                 else:
-                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
-            for unit_type in statistic["surviving_types"]["red"]:
-                if unit_type in constants.unit_type_to_id:
-                    end_red_list.append(constants.unit_type_to_id[unit_type])
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type_and_skill[0])
+            for unit_type_and_skill in statistic["surviving_types_and_skills"]["red"]:
+                if unit_type_and_skill[1] < 0:
+                    self.logger.warning("We found an unrecognized skill level in statistics. Skipping this entry.")
+                    continue
+                if unit_type_and_skill[0] in constants.unit_type_to_id:
+                    end_red_list.append([constants.unit_type_to_id[unit_type_and_skill[0]], unit_type_and_skill[1]])
                 else:
-                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
-            for unit_type in statistic["surviving_types"]["blue"]:
-                if unit_type in constants.unit_type_to_id:
-                    end_blue_list.append(constants.unit_type_to_id[unit_type])
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type_and_skill[0])
+            for unit_type_and_skill in statistic["surviving_types_and_skills"]["blue"]:
+                if unit_type_and_skill[1] < 0:
+                    self.logger.warning("We found an unrecognized skill level in statistics. Skipping this entry.")
+                    continue
+                if unit_type_and_skill[0] in constants.unit_type_to_id:
+                    end_blue_list.append([constants.unit_type_to_id[unit_type_and_skill[0]], unit_type_and_skill[1]])
                 else:
-                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type)
+                    self.logger.error("While building statistics, unrecognized unit type %s" % unit_type_and_skill[0])
 
             conflicts.append({"sr": start_red_list, "sb": start_blue_list, "er": end_red_list, "eb": end_blue_list})
 
         conn = sqlite3.connect(self.sqlite_path)
         conflicts_str = json.dumps(conflicts)
+
+        print("__stat: %s" % conflicts_str)
+
         sql = 'INSERT INTO statistics (conflicts, mission_time) VALUES (?,?)'
         c = conn.cursor()
         c.execute(sql, (conflicts_str, mission_time))
@@ -696,6 +769,19 @@ class DynCServer:
             if sought_key == value:
                 return key
         return None
+
+    @staticmethod
+    def get_skill_abbrev_from_int(skill_num):
+        if skill_num == 0:
+            return "avg"
+        elif skill_num == 1:
+            return "gd"
+        elif skill_num == 2:
+            return "hgh"
+        elif skill_num == 3:
+            return "exc"
+        else:
+            return "?"
 
     def save_statistics_text_file(self):
         if os.path.isfile(self.stat_txt_path) is True:
@@ -716,54 +802,67 @@ class DynCServer:
                     red_units_end = {}
                     blue_units_end = {}
 
-                    for unit_type in battle["sr"]:
-                        if unit_type not in red_units_start:
-                            red_units_start[unit_type] = 1
+                    for unit_type_and_skill in battle["sr"]:
+                        str_key = "%s__%d" % (unit_type_and_skill[0], unit_type_and_skill[1])
+                        if str_key not in red_units_start:
+                            red_units_start[str_key] = 1
                         else:
-                            red_units_start[unit_type] += 1
-                    for unit_type in battle["sb"]:
-                        if unit_type not in blue_units_start:
-                            blue_units_start[unit_type] = 1
+                            red_units_start[str_key] += 1
+                    for unit_type_and_skill in battle["sb"]:
+                        str_key = "%s__%d" % (unit_type_and_skill[0], unit_type_and_skill[1])
+                        if str_key not in blue_units_start:
+                            blue_units_start[str_key] = 1
                         else:
-                            blue_units_start[unit_type] += 1
-                    for unit_type in battle["er"]:
-                        if unit_type not in red_units_end:
-                            red_units_end[unit_type] = 1
+                            blue_units_start[str_key] += 1
+                    for unit_type_and_skill in battle["er"]:
+                        str_key = "%s__%d" % (unit_type_and_skill[0], unit_type_and_skill[1])
+                        if str_key not in red_units_end:
+                            red_units_end[str_key] = 1
                         else:
-                            red_units_end[unit_type] += 1
-                    for unit_type in battle["eb"]:
-                        if unit_type not in blue_units_end:
-                            blue_units_end[unit_type] = 1
+                            red_units_end[str_key] += 1
+                    for unit_type_and_skill in battle["eb"]:
+                        str_key = "%s__%d" % (unit_type_and_skill[0], unit_type_and_skill[1])
+                        if str_key not in blue_units_end:
+                            blue_units_end[str_key] = 1
                         else:
-                            blue_units_end[unit_type] += 1
+                            blue_units_end[str_key] += 1
                     red_units_start_str = ""
                     blue_units_start_str = ""
                     red_units_end_str = ""
                     blue_units_end_str = ""
-                    for unit_type in red_units_start:
-                        num = red_units_start[unit_type]
-                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                    for unit_type_and_skill in red_units_start:
+                        print(unit_type_and_skill)
+                        splitted = unit_type_and_skill.split("__")
+                        num = red_units_start[unit_type_and_skill]
+                        type_str = "%s (%s)" % (DynCServer.get_type_string_from_int(int(splitted[0])),
+                                                DynCServer.get_skill_abbrev_from_int(int(splitted[1])))
                         if num == 1:
                             red_units_start_str += "%s, " % type_str
                         else:
                             red_units_start_str += "%dX %s, " % (num, type_str)
-                    for unit_type in blue_units_start:
-                        num = blue_units_start[unit_type]
-                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                    for unit_type_and_skill in blue_units_start:
+                        splitted = unit_type_and_skill.split("__")
+                        num = blue_units_start[unit_type_and_skill]
+                        type_str = "%s (%s)" % (DynCServer.get_type_string_from_int(int(splitted[0])),
+                                                DynCServer.get_skill_abbrev_from_int(int(splitted[1])))
                         if num == 1:
                             blue_units_start_str += "%s, " % type_str
                         else:
                             blue_units_start_str += "%dX %s, " % (num, type_str)
-                    for unit_type in red_units_end:
-                        num = red_units_end[unit_type]
-                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                    for unit_type_and_skill in red_units_end:
+                        splitted = unit_type_and_skill.split("__")
+                        num = red_units_end[unit_type_and_skill]
+                        type_str = "%s (%s)" % (DynCServer.get_type_string_from_int(int(splitted[0])),
+                                                DynCServer.get_skill_abbrev_from_int(int(splitted[1])))
                         if num == 1:
                             red_units_end_str += "%s, " % type_str
                         else:
                             red_units_end_str += "%dX %s, " % (num, type_str)
-                    for unit_type in blue_units_end:
-                        num = blue_units_end[unit_type]
-                        type_str = DynCServer.get_type_string_from_int(unit_type)
+                    for unit_type_and_skill in blue_units_end:
+                        splitted = unit_type_and_skill.split("__")
+                        num = blue_units_end[unit_type_and_skill]
+                        type_str = "%s (%s)" % (DynCServer.get_type_string_from_int(int(splitted[0])),
+                                                DynCServer.get_skill_abbrev_from_int(int(splitted[1])))
                         if num == 1:
                             blue_units_end_str += "%s, " % type_str
                         else:
@@ -833,7 +932,7 @@ class DynCServer:
         self.logger.info("--Changed score: red %s, blue %s--" % (repr(scores[0]), repr(scores[1])))
         self.window.update_score(scores)
 
-    def unitdestroyed(self, unitname, groupname, time):
+    def unitdestroyed(self, unitname, groupname, time, starttime):
 
         # noinspection PyBroadException
         try:
@@ -847,11 +946,12 @@ class DynCServer:
             if unitname not in self.campaign.destroyed_unit_names_and_groups:
                 self.campaign.destroyed_unit_names_and_groups[unitname] = {"group": groupname}
 
-            self.campaign.deaths.append({"time": time, "unitname": unitname, "groupname": groupname,
+            self.campaign.deaths.append({"time": time - starttime, "unitname": unitname, "groupname": groupname,
                                          "type": group.get_type()})
 
             for dict_unit_name in group.units:
                 if dict_unit_name == unitname:
+                    print("__unit destroyed of name %s skill %s" % (dict_unit_name, group.units[dict_unit_name].skill))
                     del group.units[dict_unit_name]
                     break
             if len(group.units) == 0:
@@ -962,6 +1062,17 @@ class DynCServer:
 
                     return json.dumps(returndata)
 
+                if "skill" in received_unit:
+                    unit_skill = received_unit["skill"]
+                else:
+                    self.logger.error("Corrupt JSON from DCS: Unit doesn't have skill-field")
+
+                    returndata = \
+                        {"code": "1", "error": "Corrupt JSON: Unit doesn't have skill-field. Your mission script is "
+                                               "incompatible with server version."}
+
+                    return json.dumps(returndata)
+
                 split_pos = pos_str.split(",")
                 point = euclid3.Point2(float(split_pos[0]), float(split_pos[1]))
                 unit = self.campaign.map.find_unit_by_name(unit_name)
@@ -976,7 +1087,7 @@ class DynCServer:
 
                         group = Group(name=group_name, group_category=unit_category, coalition=unit_coalition)
                         must_add_group = True
-                    unit = Unit(name=unit_name, position=(point.x, point.y), unit_type=unit_type)
+                    unit = Unit(name=unit_name, position=(point.x, point.y), unit_type=unit_type, skill=unit_skill)
                     group.add_unit(unit)
                     if must_add_group:
                         # Note that we take a guess here about what node this group goes in, based on just one unit. But
@@ -1054,7 +1165,7 @@ class DynCServer:
             self.campaign.early_battles.clear()
             self.campaign.engagements.clear()
             self.campaign.deaths.clear()
-            self.campaign.group_nodes_mission_start.clear()
+            self.campaign.group_data_mission_start.clear()
 
             # list of dicts of the format:
             # [{ node_id: group_name, node_id: group_name}, {node_id: group_name, node_id: group_name}, ...]
@@ -1154,9 +1265,15 @@ class DynCServer:
                 group = self.campaign.map.find_group_by_name(group_name)
                 if group.category != "vehicle":
                     continue
-                self.campaign.group_nodes_mission_start[group_name] = \
+
+                skill_dict = {}
+
+                for unit_key in group.units:
+                    unit = group.units[unit_key]
+                    skill_dict[unit.name] = DynCServer.skill_string_to_statistics_num(unit.skill)
+                self.campaign.group_data_mission_start[group_name] = \
                     {"node": int(self.campaign.map.find_group_node(group)), "coalition": group.coalition,
-                     "type": group.get_type()}
+                     "type": group.get_type(), "num_units": group.num_units(), "skills": skill_dict}
 
             # Group names that we move to a halfway point of a segment, and hence do not participate in figuring out
             # the groups that battle due to being in the same node.

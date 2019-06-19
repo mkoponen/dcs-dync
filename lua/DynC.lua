@@ -746,7 +746,7 @@ do
 						-- Somehow we didn't get EVENT_DEAD for this unit. We report it destroyed now.
 
 						env.info("Reported destroyed unit at mission end: "..v["unitname"]..", group: "..v["groupname"], false)
-						local result, error = server.unitdestroyed({v["unitname"], v["groupname"], timer.getAbsTime()})
+						local result, error = server.unitdestroyed({v["unitname"], v["groupname"], timer.getAbsTime(), timer.getTime0()})
 					end
 				end
 			end
@@ -936,7 +936,7 @@ do
 							return
 						end
 						
-						local result, error = server.unitdestroyed({name, groupname, timer.getAbsTime()})
+						local result, error = server.unitdestroyed({name, groupname, timer.getAbsTime(), timer.getTime0()})
 						env.info("Reported destroyed unit: "..name..", group: "..groupname, false)
 						live_units[k] = nil
 						found_it = true
@@ -987,6 +987,7 @@ do
 			jsonobj["units"][k]["group"] = v["groupName"]
 			jsonobj["units"][k]["coalition"] = v["coalition"]
 			jsonobj["units"][k]["pos"] = string.format("%f,%f", v["point"].x, v["point"].y)
+			jsonobj["units"][k]["skill"] = v["skill"]
 		end
 
 		units = jsonobj["units"]

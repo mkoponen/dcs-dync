@@ -911,7 +911,7 @@ class Campaign:
         self.early_battles = set()
         self.engagements = []
         self.deaths = []
-        self.group_nodes_mission_start = {}
+        self.group_data_mission_start = {}
 
     # Argument previously_scheduled is a set or list of group_names that have already been moved away from this apparent
     # node, to halfway point between some two nodes. Hence they will not participate.
