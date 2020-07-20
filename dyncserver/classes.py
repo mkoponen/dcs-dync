@@ -726,7 +726,6 @@ class Map:
         return node_coord
 
     def is_node_reinforcements_path(self, node_id):
-        coords = nx.get_node_attributes(self.graph, "coord")
         return nx.get_node_attributes(self.graph, "coord")[int(node_id)][2]
 
     def get_longest_distance(self, coalition, include_reinforcement=True):
