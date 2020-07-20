@@ -241,7 +241,10 @@ class Map:
                     part.strip()
 
                 point = euclid3.Point2(float(split[0]), float(split[1]))
-                pos[i] = (point.x, point.y)
+                is_reinforcements = False
+                if len(split) > 2 and split[2] == 'r':
+                    is_reinforcements = True
+                pos[i] = (point.x, point.y, is_reinforcements)
                 graph.add_node(i)
                 if previous_point_index is not None:
                     graph.add_edge(i, previous_point_index, weight=point.distance(previous_point_coord))
@@ -269,12 +272,20 @@ class Map:
 
         for node in nodes:
 
+            # If even one of the merged nodes is not a reinforcements node, the resulting node is not reinforcements.
+            is_reinforcements = True
+            for node_id in node:
+                if pos[node_id][2] is False:
+                    is_reinforcements = False
+                    break
+
             # We just take the node ID with the smallest number from the subgraph that was contracted, and ignore the
             # rest
             newgraph.add_node(min(node))
 
-            # We create a smaller pos-table which only contains the surviving nodes
-            newpos[min(node)] = pos[min(node)]
+            # We create a smaller pos-table which only contains the surviving nodes. We ignore the reinforcements tuple
+            # index of the node, and substitute it with the value we determined above. Rest comes from the tuple.
+            newpos[min(node)] = (pos[min(node)][0], pos[min(node)][1], is_reinforcements)
 
         edges = qgraph.edges(data=True)
 
@@ -714,15 +725,35 @@ class Map:
         node_coord = (coord[0], coord[1])
         return node_coord
 
-    def get_longest_distance(self, coalition):
+    def is_node_reinforcements_path(self, node_id):
+        coords = nx.get_node_attributes(self.graph, "coord")
+        return nx.get_node_attributes(self.graph, "coord")[int(node_id)][2]
+
+    def get_longest_distance(self, coalition, include_reinforcement=True):
         if coalition == "red":
             correct_dict = self.red_nodes_by_distance
         else:
             correct_dict = self.blue_nodes_by_distance
+        if include_reinforcement is False:
+            # We create this dictionary anew, so that it doesn't even have distance keys for node lists that only have
+            # reinforcement nodes.
+            temp_dict = {}
+            for distance in correct_dict:
+                has_key = False
+                for node_id in correct_dict[distance]:
+                    if self.is_node_reinforcements_path(node_id) is False:
+                        # Found at least one non-reinforcements node. Must add key.
+                        if not has_key:
+                            temp_dict[distance] = [node_id]
+                            has_key = True
+                        else:
+                            temp_dict[distance].append(node_id)
+            correct_dict = temp_dict
+
         distances = list(correct_dict.keys())
         return int(max(distances))
 
-    def get_nodes_by_distance(self, coalition, distance):
+    def get_nodes_by_distance(self, coalition, distance, include_reinforcement=True):
 
         if coalition != "red" and coalition != "blue":
             logger.error("Cannot get nodes by distance: Coalition must be either 'red' or 'blue'; was: '%s'" %
@@ -734,14 +765,30 @@ class Map:
         else:
             correct_dict = self.blue_nodes_by_distance
 
+        if include_reinforcement is False:
+            # We create this dictionary anew, so that it doesn't even have distance keys for node lists that only have
+            # reinforcement nodes.
+            temp_dict = {}
+            for distance_key in correct_dict:
+                has_key = False
+                for node_id in correct_dict[distance_key]:
+                    if self.is_node_reinforcements_path(node_id) is False:
+                        # Found at least one non-reinforcements node. Must add key.
+                        if not has_key:
+                            temp_dict[distance_key] = [node_id]
+                            has_key = True
+                        else:
+                            temp_dict[distance_key].append(node_id)
+            correct_dict = temp_dict
+
         if distance not in correct_dict:
             return []
         return correct_dict[distance]
 
     def find_furtherst_own_groups_nodes(self, coalition):
-        for distance in range(self.get_longest_distance(coalition), -1, -1):
+        for distance in range(self.get_longest_distance(coalition, include_reinforcement=False), -1, -1):
             nodes = []
-            for node_id in self.get_nodes_by_distance(coalition, distance):
+            for node_id in self.get_nodes_by_distance(coalition, distance, include_reinforcement=False):
                 if self.get_num_units_in_node(coalition, int(node_id)) > 0:
                     nodes.append(int(node_id))
             if len(nodes) == 0:

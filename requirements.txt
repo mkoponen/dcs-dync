@@ -3,7 +3,8 @@ werkzeug
 euclid3
 networkx
 numpy
-matplotlib
+# Currently there is a bug in pyinstaller that prevents anything newer than this matplotlib
+matplotlib==3.2.2
 wxPython
 pillow
 requests

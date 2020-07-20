@@ -19,6 +19,7 @@ from windowloghandler import WindowLogHandler
 from message_service_discord import MessageService
 
 server_obj = None
+server_thread = None
 
 
 class DynCServer:
@@ -755,7 +756,7 @@ class DynCServer:
         conn = sqlite3.connect(self.sqlite_path)
         conflicts_str = json.dumps(conflicts)
 
-        print("__stat: %s" % conflicts_str)
+        # print("__stat: %s" % conflicts_str)
 
         sql = 'INSERT INTO statistics (conflicts, mission_time) VALUES (?,?)'
         c = conn.cursor()
@@ -951,7 +952,8 @@ class DynCServer:
 
             for dict_unit_name in group.units:
                 if dict_unit_name == unitname:
-                    print("__unit destroyed of name %s skill %s" % (dict_unit_name, group.units[dict_unit_name].skill))
+                    # print("__unit destroyed of name %s skill %s" %
+                    #       (dict_unit_name, group.units[dict_unit_name].skill))
                     del group.units[dict_unit_name]
                     break
             if len(group.units) == 0:
@@ -1482,7 +1484,11 @@ class DynCServer:
 
     def campaign_changed(self):
         if self.campaign.map.graph is not None:
-            buf = server_obj.get_graph_image()
+            if isinstance(server_obj, DynCServer):
+                buf = server_obj.get_graph_image()
+            else:
+                self.logger.warning("server_obj uninitialized in campaign_changed")
+                return
             self.window.update_map(buf)
             scores = self.get_scores()
             if scores[0] is None or scores[1] is None:
@@ -1552,16 +1558,21 @@ class DynCServer:
 @Request.application
 def application(request):
     global server_obj
-    # Dispatcher is dictionary {<method_name>: callable}
-    dispatcher["processjson"] = server_obj.processjson
-    dispatcher["unitdestroyed"] = server_obj.unitdestroyed
-    dispatcher["missionend"] = server_obj.missionend
-    dispatcher["supportdestroyed"] = server_obj.supportdestroyed
-    dispatcher["changescore"] = server_obj.changescore
+    if isinstance(server_obj, DynCServer):
 
-    response = JSONRPCResponseManager.handle(
-        request.data, dispatcher)
-    return Response(response.json, mimetype='application/json')
+        # Dispatcher is dictionary {<method_name>: callable}
+        dispatcher["processjson"] = server_obj.processjson
+        dispatcher["unitdestroyed"] = server_obj.unitdestroyed
+        dispatcher["missionend"] = server_obj.missionend
+        dispatcher["supportdestroyed"] = server_obj.supportdestroyed
+        dispatcher["changescore"] = server_obj.changescore
+
+        response = JSONRPCResponseManager.handle(
+            request.data, dispatcher)
+        return Response(response.json, mimetype='application/json')
+    else:
+        # Uninitialized server. Should never happen.
+        return None
 
 
 class ServerThread(Thread):

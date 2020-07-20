@@ -22,7 +22,7 @@ installation section below. It is the change to the file [DCS World folder]\\Scr
 ## Installation
 
 The easiest way to install the software is to use the executable installer that is supplied for all release versions. It
-will install the server software as a normal Windows application. Python 3.7 with the necessary libraries is bundled
+will install the server software as a normal Windows application. Python 3.8 with the necessary libraries is bundled
 with the executable. The installer will offer the option to automatically modify your DCS World game installation to
 communicate with the software, or you can make the changes yourself. If you allow the installer to make them, the
 uninstaller will be able to automatically revert the changes upon uninstallation.
@@ -89,7 +89,7 @@ Skip the two sections below if you used the installer.
 
 ### Running the server with your own Python interpreter
 
-For advanced users, it is not necessary to use the installer at all. You can use your own Python 3.6 or 3.7 environment,
+For advanced users, it is not necessary to use the installer at all. You can use your own Python 3.8 environment,
 and optionally create a virtualenv based on requirements.txt, available at the root of the project directory.
 Instructions are not provided here, but it is no different than running any Python program that supplies a
 requirements.txt with it. The file to run is dyncserver.py . Working directory must be the subdirectory "dyncserver" of
@@ -97,14 +97,22 @@ the project directory.
 
 ### Building your own installer
 
-In a Python environment that contains everything in requirements.txt and a Python 3.6 or 3.7 interpreter, and the
+In a Python environment that contains everything in requirements.txt and a Python 3.8 interpreter, and the
 PyInstaller library, execute "pyinstaller dyncserver.spec" in command prompt. Use the default output directory (in other
 words, no additional parameters to pyinstaller), so that NSIS will locate the created files. After the "dist" directory
 has been created under dyncserver, use NSIS from https://nsis.sourceforge.io/Main_Page to compile the file dync.nsi in
 the "installer" directory under the project directory. If you allowed NSIS to create the context menu items, select the
 file, right-click on it, and choose "Compile NSIS Script". This will create the installer executable in the same folder.
 
+Use development branch of pyinstaller, installed with:
+
+pip install https://github.com/pyinstaller/pyinstaller/archive/develop.tar.gz
+
+Also note that the current version prevents you from using a newer matplotlib than 3.2.2 . This will probably be fixed
+later in pyinstaller. With a newer version the software will work otherwise, but the pyinstaller -made .exe will not
+work, but fail with a cryptic error.
+
 ### Other operating systems
 
-The intention is to eventually support any operating system which can run Python 3.6/3.7 so that you can run the server
+The intention is to eventually support any operating system which can run Python 3.8 so that you can run the server
 also remotely instead of only locally. At this point that is unsupported, and is to be attempted at your own risk.

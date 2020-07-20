@@ -302,10 +302,10 @@ def decide_support_move(current_node, coalition, game_map, max_infantry_in_node)
         return None
 
     # We prefer to fill nodes that are at the shortest possible distance from base, that still require support and don't
-    # have enemy units.
+    # have enemy units. Note that we ignore anything on the reinforcements path.
 
-    for distance in range(1, game_map.get_longest_distance(coalition) + 1):
-        nodes = game_map.get_nodes_by_distance(coalition, distance)
+    for distance in range(1, game_map.get_longest_distance(coalition, include_reinforcement=False) + 1):
+        nodes = game_map.get_nodes_by_distance(coalition, distance, include_reinforcement=False)
         if nodes is not None:
             random.shuffle(nodes)
             for node_id in nodes:
