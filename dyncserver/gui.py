@@ -83,6 +83,13 @@ class DyncCFrame(wx.Frame):
         self.old_image_buffer = img_buffer
         self.panel.Layout()
 
+    def erase_window(self):
+        self.map.SetBitmap(wx.NullBitmap)
+        if self.old_image_buffer is not None:
+            self.old_image_buffer.close()
+        self.score.Clear()
+        self.panel.Layout()
+
     def update_score(self, score):
         if score is None or score[0] is None or score[1] is None:
             logger.warning("update_score got invalid score dict: %s" % repr(score))
@@ -169,6 +176,14 @@ class DyncCFrame(wx.Frame):
         self.server.save_statistics_text_file()
 
     def on_reset_campaign(self, _):
+        dial = wx.MessageDialog(self, "This will permanenly delete the campaign file %s . " 
+                                      "You can also choose No, and make a backup of this file before proceeding. "
+                                      "Do you want to reset campaign?" % self.server.campaign_json,
+                                "Confirm campaign reset?",
+                                wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION).ShowModal()
+
+        if dial != wx.ID_YES:
+            return
         self.server.reset_campaign()
 
     def on_paths(self, _):

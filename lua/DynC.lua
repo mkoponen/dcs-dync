@@ -776,22 +776,26 @@ do
 			local unitshooteename = event.target:getName()
 			local unitshootee = Unit.getByName(unitshooteename)
 			local shotgroupname = Unit.getGroup(unitshootee):getName()
+			local shootercategory = Unit.getGroup(unitshooter):getCategory()
+			local shooteecategory = Unit.getGroup(unitshootee):getCategory()
 			
 			if string.find(shotgroupname, "__in__") then
 				-- Infantry is merely symbolic. We don't care about it.
 				return
 			end
 			
-			if mist.DBs.unitsByName[unitshooteename]["category"] == "plane" then
+			-- Category 0 is plane, and 1 is helicopter. Note: These numbers are only true for Group objects. Unit objects have different meanings.
+			
+			if shooteecategory <= 1 then
 				-- Shot planes don't interest us at this point
 				return
 			end
 			
 			local was_plane = false
 			
-			if mist.DBs.unitsByName[unitshootername]["category"] == "plane" then
+			if shootercategory <= 1 then
 				was_plane = true
-			end	
+			end
 			
 			local shootinggroupname = unitshooter:getGroup():getName()
 			if groups_shot_by_group[shotgroupname] == nil then
@@ -847,8 +851,11 @@ do
 			if scored_planes[name] ~= nil then
 				already_scored = true				
 			elseif is_unit == true then
-				local unit_table = mist.DBs.unitsByName[name]
-				if unit_table["category"] == "plane" then
+			
+			
+				local unitcategory = Unit.getGroup(event.initiator):getCategory()			
+				if unitcategory <= 1 then
+					-- <= 1 means plane or helicopter
 					local coalition_str
 					local coalition_id = event.initiator:getCoalition()
 					if coalition_id == coalition.side.RED then
@@ -859,10 +866,9 @@ do
 						return
 					end				
 				
-					env.info(string.format("Some plane died, of skill %s", unit_table["skill"]), false)
 					scored_planes[name] = true
 					
-					if unit_table["skill"] ~= nil and (unit_table["skill"] == "Player" or unit_table["skill"] == "Client") then
+					if Unit.getPlayerName(event.initiator) ~= nil then
 						env.info(string.format("Player plane died"), false)
 						if event.id == world.event.S_EVENT_EJECTION then							
 							local result, error = server.changescore({"player_eject", coalition_str, name})
@@ -871,7 +877,7 @@ do
 						end
 						already_scored = true
 						
-					elseif unit_table["skill"] ~= nil then
+					else
 						env.info(string.format("A.I. plane died"), false)
 						
 						if event.id == world.event.S_EVENT_EJECTION then
@@ -976,6 +982,11 @@ do
 	end
 
 	function getunits()
+	
+		-- Please note that this function may not find dynamically added units. This appears to have changed recently in DCS World scripting.
+		-- Currently it is called before any dynamic units are added by our code, and hence this is not a problem. But if you ever start using
+		-- this function later, then you have to specifically search the table of dynamic units too. Also, it might start finding dynamic units
+		-- in a later DCS World version again, or later MiST version. So, if you move the call anywhere else, make sure to make it robust to this.
 
 		jsonobj = {}
 		jsonobj["units"] = {}
@@ -1012,12 +1023,18 @@ do
 
 		for k,v in pairs(units) do
 
-			if string.starts(k, "routemarker") or string.find(k, "__rom__") or string.find(v["group"], "__rom__") then
-
+			if string.starts(k, "routemarker") or string.find(k, "__rom__") or string.find(v["group"], "__rom__") or string.find(k, "__rem__") or string.find(v["group"], "__rem__") then
+				-- __rem__ means reinforcements path marker. Can be together with __rom__, or alone. Both cases have the exact same meaning.
 				local grp = Group.getByName(v["group"])
 				local points = mist.getGroupPoints(grp:getID())
 
 				if points ~= nil then
+				
+					local is_reinforcement = false
+				
+					if string.find(k, "__rem__") or string.find(v["group"], "__rem__") then
+						is_reinforcement = true
+					end
 
 					local newroute = {}
 					tkeys = {}
@@ -1028,7 +1045,11 @@ do
 					table.sort(tkeys)
 
 					for _, k2 in ipairs(tkeys) do
-						table.insert(newroute, string.format("%f,%f", points[k2]["x"], points[k2]["y"]))
+						if is_reinforcement == true then
+							table.insert(newroute, string.format("%f,%f,r", points[k2]["x"], points[k2]["y"]))
+						else
+							table.insert(newroute, string.format("%f,%f", points[k2]["x"], points[k2]["y"]))
+						end
 					end
 					table.insert(jsonobj["routes"], newroute)
 				end
@@ -1208,8 +1229,8 @@ do
 			local name = string.format("Infantry red %dX #%d (dyn) __in__", num, infantryID)
 
 			local addedgroup = {country="Russia", category="vehicle", groupName=name,
-								 units={{unitName=name, skill="Excellent", type="Infantry AK", x=vec2.x, y=vec2.y},}}
-
+								 units={{unitName=name, skill="Excellent", type="Infantry AK", x=vec2.x, y=vec2.y},}}								 
+			
 			mist.dynAdd(addedgroup)
 
 			infantryID = infantryID + 1
@@ -1227,7 +1248,7 @@ do
 
 			local addedgroup = {country="USA", category="vehicle", groupName=name,
 								 units={{unitName=name, skill="Excellent", type="Soldier M249", x=vec2.x, y=vec2.y},}}
-
+			
 			mist.dynAdd(addedgroup)
 
 			infantryID = infantryID + 1
@@ -1345,7 +1366,11 @@ do
 		dync.mission_env = mission_env_
 		server = json.rpc.proxy(dync.socket)
 		log("Dync.socket: "..dync.socket)
+		
+		-- See the comment in this function. Currently it is not safe to call it after you have added even one dynamic unit. If you ever
+		-- need to, then make the function more robust. Behavior may depend on DCS World version, and MiST version with regards to dynamic.
 		getunits()
+		
 		mist.addEventHandler(handle_event)
 
 	end

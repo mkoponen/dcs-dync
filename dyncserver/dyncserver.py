@@ -230,6 +230,7 @@ class DynCServer:
     def reset_campaign(self):
         self.delete_campaign()
         self.init_campaign()
+        self.window.erase_window()
         self.read_config(self.conf_file)
 
     def get_graph_image(self):
@@ -367,6 +368,10 @@ class DynCServer:
         return np.random.choice(self.campaign.allowed_aa_units[coalition])
 
     def delete_campaign(self):
+        if not os.path.isfile(self.campaign_json):
+            self.logger.warning("There was no campaign in progress. Ignoring command.")
+            self.campaign = None
+            return
         try:
             os.remove(self.campaign_json)
         except OSError:

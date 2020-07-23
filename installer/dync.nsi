@@ -68,7 +68,7 @@ Section "Install Server"
   File "/oname=DCS World Files\dync_httpfix.lua" "..\lua\dync_httpfix.lua"
   File "/oname=DCS World Files\dync_urlfix.lua" "..\lua\dync_urlfix.lua"
   File "/oname=DCS World Files\DynCMissionInclude.lua" "..\lua\DynCMissionInclude.lua"
-  File "/oname=DCS World Files\mist_4_3_74.lua" "..\lua\mist_4_3_74.lua"
+  File "/oname=DCS World Files\mist_4_4_87.lua" "..\lua\mist_4_4_87.lua"
   
   ; File "/oname=DCS World Files\beachparty-example1.miz" "..\bin\beachparty-example1.miz"
   File "/oname=DCS World Files\mozdok-example1.miz" "..\bin\mozdok-example1.miz"
